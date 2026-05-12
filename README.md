@@ -16,7 +16,7 @@ MCP REVIT/
 │   ├── main.py                          # Servidor FastMCP (Python)
 │   └── requirements.txt
 └── plugin/
-    ├── RevitMcpPlugin.csproj            # Proyecto .NET 8
+    ├── RevitMcpPlugin.csproj            # Proyecto .NET framework 4.8
     ├── RevitMcpPlugin.sln
     ├── RevitMcpPlugin.addin             # Manifiesto de carga para Revit
     ├── Plugin.cs                        # IExternalApplication (entry point)
