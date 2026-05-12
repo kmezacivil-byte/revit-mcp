@@ -1,0 +1,33 @@
+# ──────────────────────────────────────────────
+#  RevitMCP Plugin — .gitignore
+# ──────────────────────────────────────────────
+
+# Visual Studio / VS Code artefactos
+plugin/.vs/
+*.user
+*.suo
+.vscode/
+
+# Build intermediaries (.NET)
+plugin/obj/
+plugin/build-output/
+
+# Simbolos de debug (opcionales — comentar para incluirlos)
+plugin/build-output-2021/*.pdb
+
+# Instalador compilado (binario grande — regenerar con Inno Setup)
+installer/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Claude Code
+.claude/
+
+# Logs de diagnóstico generados en runtime
+*.log

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>RevitMcpPlugin</Name>
+    <!-- IMPORTANTE: actualizar esta ruta con la ruta real del DLL compilado -->
+    <Assembly>C:\Users\ASUS TUF F16\Desktop\DIGITAL JUMP PERU\MCP REVIT\plugin\build-output\RevitMcpPlugin.dll</Assembly>
+    <AddInId>F1E2D3C4-B5A6-7890-ABCD-EF1234567890</AddInId>
+    <FullClassName>RevitMcpPlugin.Plugin</FullClassName>
+    <VendorId>DJUMP</VendorId>
+    <VendorDescription>Digital Jump Peru</VendorDescription>
+  </AddIn>
+</RevitAddIns>
