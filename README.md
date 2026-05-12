@@ -117,7 +117,7 @@ Editar `%APPDATA%\Claude\claude_desktop_config.json`:
 
 | Aspecto | Civil 3D | Revit |
 |---|---|---|
-| Puerto TCP | 5001 | 5001 |
+| Puerto TCP | 5000 | 5001 |
 | Entry point | `IExtensionApplication` | `IExternalApplication` |
 | Thread safety | `ExecuteInCommandContextAsync` | `ExternalEvent` + `IExternalEventHandler` |
 | Carga del plugin | `NETLOAD` manual | `.addin` automático al iniciar Revit |
