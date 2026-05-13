@@ -12,8 +12,8 @@ plugin/.vs/
 plugin/obj/
 plugin/build-output/
 
-# Simbolos de debug (opcionales — comentar para incluirlos)
-plugin/build-output-2021/*.pdb
+# Simbolos de debug de todas las versiones (comentar para incluirlos)
+plugin/build-output-*/*.pdb
 
 # Instalador compilado (binario grande — regenerar con Inno Setup)
 installer/
