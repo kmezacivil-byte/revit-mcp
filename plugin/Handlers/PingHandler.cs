@@ -1,17 +1,17 @@
-﻿using Autodesk.Revit.UI;
-using Autodesk.Revit.DB;
-using System.Collections.Generic;
-using Newtonsoft.Json;
-
+﻿#nullable disable
 namespace RevitMcpPlugin.Handlers
 {
-    public class PingHandler : ICommandHandler
+    public class PingTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
+        public override string Name => "ping";
+        public override string Description =>
+            "Verifica que el plugin de Revit responde. Retorna la versión de Revit y el proyecto abierto.";
+
+        public override object Run(ToolArgs args, ToolContext ctx) => new
         {
-            var project = doc?.Title ?? "Sin documento abierto";
-            var version = uiApp?.Application?.VersionName ?? "Revit";
-            return JsonConvert.SerializeObject(new { status = "ok", revit = version, proyecto = project });
-        }
+            status = "ok",
+            revit = ctx.App.Application.VersionName ?? "Revit",
+            proyecto = ctx.Doc?.Title ?? "Sin documento abierto"
+        };
     }
 }

@@ -1,82 +1,69 @@
-using Autodesk.Revit.UI;
+#nullable disable
 using Autodesk.Revit.DB;
+using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
-using Newtonsoft.Json;
 using System.Linq;
 
 namespace RevitMcpPlugin.Handlers
 {
-    public class CreateWallHandler : ICommandHandler
+    public class CreateWallTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
+        public override string Name => "create_wall";
+        public override string Description =>
+            "Crea un muro recto en el proyecto activo (coordenadas en metros). Se puede deshacer con Ctrl+Z.";
+        public override bool ReadOnly => false;
+
+        public override JObject InputSchema => Schema.Object(new[] { "x1", "y1", "x2", "y2" },
+            ("x1", "number", "X inicial (m)"), ("y1", "number", "Y inicial (m)"),
+            ("x2", "number", "X final (m)"), ("y2", "number", "Y final (m)"),
+            ("nivel", "string", "Nombre del nivel; vacío = el más bajo"),
+            ("tipo_muro", "string", "Nombre del tipo de muro; vacío = el primero"),
+            ("altura_m", "number", "Altura en metros (3.0 por defecto)"));
+
+        public override object Run(ToolArgs args, ToolContext ctx)
         {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
+            var doc = ctx.RequireDoc();
 
-            // Coordenadas en metros -> convertir a pies (unidad interna de Revit)
-            double x1 = Parse(args, "x1", 0) / 0.3048;
-            double y1 = Parse(args, "y1", 0) / 0.3048;
-            double x2 = Parse(args, "x2", 5) / 0.3048;
-            double y2 = Parse(args, "y2", 0) / 0.3048;
+            double x1 = args.RequireDbl("x1") / Units.FeetToMeters;
+            double y1 = args.RequireDbl("y1") / Units.FeetToMeters;
+            double x2 = args.RequireDbl("x2") / Units.FeetToMeters;
+            double y2 = args.RequireDbl("y2") / Units.FeetToMeters;
+            double alturaM = args.Dbl("altura_m", 3.0);
+            var levelName = args.Str("nivel", args.Str("level", ""));
+            var wallTypeName = args.Str("tipo_muro", args.Str("wall_type", ""));
 
-            var levelName = args.GetValueOrDefault("nivel", args.GetValueOrDefault("level", ""));
-            var wallTypeName = args.GetValueOrDefault("tipo_muro", args.GetValueOrDefault("wall_type", ""));
-            double alturaM = Parse(args, "altura_m", 3.0);
-
-            // Buscar nivel
-            var levels = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
-
+            var levels = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().ToList();
             Level level = string.IsNullOrWhiteSpace(levelName)
-                ? levels.OrderBy(l => l.Elevation).First()
+                ? levels.OrderBy(l => l.Elevation).FirstOrDefault()
                 : levels.FirstOrDefault(l => l.Name.Equals(levelName, StringComparison.OrdinalIgnoreCase));
+            if (level == null) throw new ToolException($"Nivel '{levelName}' no encontrado");
 
-            if (level == null)
-                return JsonConvert.SerializeObject(new { error = $"Nivel '{levelName}' no encontrado" });
+            var wallTypes = new FilteredElementCollector(doc).OfClass(typeof(WallType)).Cast<WallType>().ToList();
+            WallType wallType = string.IsNullOrWhiteSpace(wallTypeName)
+                ? wallTypes.FirstOrDefault()
+                : wallTypes.FirstOrDefault(wt => wt.Name.Equals(wallTypeName, StringComparison.OrdinalIgnoreCase));
+            if (wallType == null) throw new ToolException($"Tipo de muro '{wallTypeName}' no encontrado");
 
-            // Buscar tipo de muro (opcional)
-            WallType wallType = null;
-            if (!string.IsNullOrWhiteSpace(wallTypeName))
+            if (Math.Abs(x1 - x2) < 1e-9 && Math.Abs(y1 - y2) < 1e-9)
+                throw new ToolException("El punto inicial y final coinciden: el muro no tendría longitud");
+
+            using (var tx = new Transaction(doc, "Crear Muro (MCP)"))
             {
-                wallType = new FilteredElementCollector(doc)
-                    .OfClass(typeof(WallType))
-                    .Cast<WallType>()
-                    .FirstOrDefault(wt => wt.Name.Equals(wallTypeName, StringComparison.OrdinalIgnoreCase));
+                tx.Start();
+                var line = Line.CreateBound(new XYZ(x1, y1, level.Elevation), new XYZ(x2, y2, level.Elevation));
+                var wall = Wall.Create(doc, line, wallType.Id, level.Id, alturaM / Units.FeetToMeters, 0, false, false);
+                tx.Commit();
+
+                return new
+                {
+                    id = wall.Id.GetId(),
+                    nombre = wall.Name,
+                    tipo = wallType.Name,
+                    nivel = level.Name,
+                    longitud_m = Math.Round(line.Length * Units.FeetToMeters, 3),
+                    altura_m = alturaM
+                };
             }
-            wallType ??= new FilteredElementCollector(doc)
-                .OfClass(typeof(WallType))
-                .Cast<WallType>()
-                .First();
-
-            using var tx = new Transaction(doc, "Crear Muro (MCP)");
-            tx.Start();
-
-            var line = Line.CreateBound(new XYZ(x1, y1, level.Elevation), new XYZ(x2, y2, level.Elevation));
-            var wall = Wall.Create(doc, line, wallType.Id, level.Id, alturaM / 0.3048, 0, false, false);
-
-            tx.Commit();
-
-            return JsonConvert.SerializeObject(new
-            {
-                id = wall.Id.GetId(),
-                nombre = wall.Name,
-                tipo = wallType.Name,
-                nivel = level.Name,
-                longitud_m = Math.Round(line.Length * 0.3048, 3),
-                altura_m = alturaM
-            });
-        }
-
-        private static double Parse(Dictionary<string, string> args, string key, double defaultVal)
-        {
-            if (args.TryGetValue(key, out var s) && double.TryParse(s,
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var v))
-                return v;
-            return defaultVal;
         }
     }
 }

@@ -1,81 +1,36 @@
-using Autodesk.Revit.UI;
-using Autodesk.Revit.DB;
-using System;
-using System.Collections.Generic;
-using Newtonsoft.Json;
+#nullable disable
+using Newtonsoft.Json.Linq;
 using System.Linq;
 
 namespace RevitMcpPlugin.Handlers
 {
-    public class GetElementsByCategoryHandler : ICommandHandler
+    public class GetElementsByCategoryTool : McpTool
     {
-        private static readonly Dictionary<string, BuiltInCategory> CategoryMap =
-            new Dictionary<string, BuiltInCategory>(StringComparer.OrdinalIgnoreCase)
+        public override string Name => "get_elements_by_category";
+        public override string Description =>
+            "Elementos de una categoría. Alias: muros/walls, puertas/doors, ventanas/windows, pisos/floors, " +
+            "techos/roofs, columnas/columns, vigas/beams, escaleras/stairs, mobiliario/furniture, tuberias/pipes, " +
+            "ductos/ducts; o cualquier nombre de categoría de Revit (ver get_categories).";
+
+        public override JObject InputSchema => Schema.Object(new[] { "categoria" },
+            ("categoria", "string", "Alias o nombre de la categoría, p.ej. \"muros\""),
+            ("limite", "integer", "Máximo de elementos a devolver (100 por defecto)"));
+
+        public override object Run(ToolArgs args, ToolContext ctx)
         {
-            { "muros",      BuiltInCategory.OST_Walls },
-            { "walls",      BuiltInCategory.OST_Walls },
-            { "puertas",    BuiltInCategory.OST_Doors },
-            { "doors",      BuiltInCategory.OST_Doors },
-            { "ventanas",   BuiltInCategory.OST_Windows },
-            { "windows",    BuiltInCategory.OST_Windows },
-            { "pisos",      BuiltInCategory.OST_Floors },
-            { "floors",     BuiltInCategory.OST_Floors },
-            { "techos",     BuiltInCategory.OST_Roofs },
-            { "roofs",      BuiltInCategory.OST_Roofs },
-            { "columnas",   BuiltInCategory.OST_Columns },
-            { "columns",    BuiltInCategory.OST_Columns },
-            { "vigas",      BuiltInCategory.OST_StructuralFraming },
-            { "beams",      BuiltInCategory.OST_StructuralFraming },
-            { "escaleras",  BuiltInCategory.OST_Stairs },
-            { "stairs",     BuiltInCategory.OST_Stairs },
-            { "mobiliario", BuiltInCategory.OST_Furniture },
-            { "furniture",  BuiltInCategory.OST_Furniture },
-            { "tuberias",   BuiltInCategory.OST_PipeCurves },
-            { "pipes",      BuiltInCategory.OST_PipeCurves },
-            { "ductos",     BuiltInCategory.OST_DuctCurves },
-            { "ducts",      BuiltInCategory.OST_DuctCurves },
-        };
+            var doc = ctx.RequireDoc();
+            var categoria = args.Str("categoria", args.Str("category", ""));
+            if (string.IsNullOrWhiteSpace(categoria)) throw new ToolException("Falta el parámetro obligatorio 'categoria'");
+            int limite = args.Limit();
 
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
-        {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
-
-            var categoryName = args.GetValueOrDefault("categoria", args.GetValueOrDefault("category", ""));
-            if (string.IsNullOrWhiteSpace(categoryName))
-                return JsonConvert.SerializeObject(new
-                {
-                    error = "Se requiere el parametro 'categoria'",
-                    categorias_disponibles = CategoryMap.Keys.ToArray()
-                });
-
-            if (!CategoryMap.TryGetValue(categoryName, out var bic))
-                return JsonConvert.SerializeObject(new
-                {
-                    error = $"Categoria '{categoryName}' no reconocida",
-                    categorias_disponibles = CategoryMap.Keys.ToArray()
-                });
-
-            var elements = new FilteredElementCollector(doc)
-                .OfCategory(bic)
-                .WhereElementIsNotElementType()
-                .Select(e => new
-                {
-                    id = e.Id.GetId(),
-                    nombre = e.Name,
-                    tipo = doc.GetElement(e.GetTypeId())?.Name ?? "",
-                    nivel = (e.LevelId != null && e.LevelId != ElementId.InvalidElementId)
-                        ? (doc.GetElement(e.LevelId) as Level)?.Name ?? ""
-                        : ""
-                })
-                .ToList();
-
-            return JsonConvert.SerializeObject(new
+            var elements = ToolHelpers.Instances(doc, categoria).ToList();
+            return new
             {
-                categoria = categoryName,
+                categoria,
                 total = elements.Count,
-                elementos = elements
-            });
+                devueltos = System.Math.Min(elements.Count, limite),
+                elementos = elements.Take(limite).Select(e => ToolHelpers.Brief(doc, e))
+            };
         }
     }
 }

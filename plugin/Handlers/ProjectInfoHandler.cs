@@ -1,32 +1,27 @@
-﻿using Autodesk.Revit.UI;
-using Autodesk.Revit.DB;
-using System.Collections.Generic;
-using Newtonsoft.Json;
-
+﻿#nullable disable
 namespace RevitMcpPlugin.Handlers
 {
-    public class ProjectInfoHandler : ICommandHandler
+    public class ProjectInfoTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
+        public override string Name => "get_project_info";
+        public override string Description =>
+            "Información general del proyecto activo: título, ruta, versión, nombre, número, autor y organización. " +
+            "Para contar elementos usa get_model_statistics.";
+
+        public override object Run(ToolArgs args, ToolContext ctx)
         {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
-
+            var doc = ctx.RequireDoc();
             var info = doc.ProjectInformation;
-
-            // Nota: GetElementCount() se omite porque puede ser muy lento en modelos grandes
-            // y provocar un timeout del ExternalEvent. Si se necesita, usar get_elements_by_category.
-
-            return JsonConvert.SerializeObject(new
+            return new
             {
                 titulo = doc.Title,
                 ruta = doc.PathName,
-                version = uiApp.Application.VersionName,
+                version = ctx.App.Application.VersionName,
                 nombre_proyecto = info?.Name ?? "",
                 numero_proyecto = info?.Number ?? "",
                 autor = info?.Author ?? "",
                 organizacion = info?.OrganizationName ?? ""
-            });
+            };
         }
     }
 }

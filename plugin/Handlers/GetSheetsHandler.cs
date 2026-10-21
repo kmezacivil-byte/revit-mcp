@@ -1,18 +1,18 @@
-using Autodesk.Revit.UI;
+#nullable disable
 using Autodesk.Revit.DB;
-using System.Collections.Generic;
-using Newtonsoft.Json;
 using System.Linq;
 
 namespace RevitMcpPlugin.Handlers
 {
-    public class GetSheetsHandler : ICommandHandler
+    public class GetSheetsTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
-        {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
+        public override string Name => "get_sheets";
+        public override string Description =>
+            "Lista las láminas con número, nombre, diseñador y cantidad de vistas colocadas.";
 
+        public override object Run(ToolArgs args, ToolContext ctx)
+        {
+            var doc = ctx.RequireDoc();
             var sheets = new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewSheet))
                 .Cast<ViewSheet>()
@@ -27,7 +27,7 @@ namespace RevitMcpPlugin.Handlers
                 })
                 .ToList();
 
-            return JsonConvert.SerializeObject(new { total = sheets.Count, laminas = sheets });
+            return new { total = sheets.Count, laminas = sheets };
         }
     }
 }

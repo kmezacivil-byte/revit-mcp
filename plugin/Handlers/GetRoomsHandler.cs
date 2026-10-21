@@ -1,36 +1,50 @@
-﻿using Autodesk.Revit.UI;
+﻿#nullable disable
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
-using System.Collections.Generic;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Linq;
 
 namespace RevitMcpPlugin.Handlers
 {
-    public class GetRoomsHandler : ICommandHandler
+    public class GetRoomsTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
+        public override string Name => "get_rooms";
+        public override string Description =>
+            "Lista los ambientes con área > 0: número, nombre, área (m²), nivel y perímetro (m). " +
+            "Filtros opcionales: nivel (nombre exacto) y limite.";
+
+        public override JObject InputSchema => Schema.Object(
+            ("nivel", "string", "Nombre del nivel para filtrar"),
+            ("limite", "integer", "Máximo de ambientes a devolver (100 por defecto)"));
+
+        public override object Run(ToolArgs args, ToolContext ctx)
         {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
+            var doc = ctx.RequireDoc();
+            var nivel = args.Str("nivel");
+            int limite = args.Limit();
 
             var rooms = new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_Rooms)
                 .Cast<Room>()
                 .Where(r => r.Area > 0)
+                .Where(r => nivel == "" || string.Equals(r.Level?.Name, nivel, System.StringComparison.OrdinalIgnoreCase))
                 .OrderBy(r => r.Number)
-                .Select(r => new
+                .ToList();
+
+            return new
+            {
+                total = rooms.Count,
+                devueltos = System.Math.Min(rooms.Count, limite),
+                ambientes = rooms.Take(limite).Select(r => new
                 {
                     id = r.Id.GetId(),
                     numero = r.Number,
-                    nombre = r.Name,
-                    area_m2 = System.Math.Round(r.Area * 0.092903, 3),
+                    nombre = ToolHelpers.SafeName(r),
+                    area_m2 = Units.M2(r.Area),
                     nivel = r.Level?.Name ?? "",
-                    perimetro_m = System.Math.Round(r.Perimeter * 0.3048, 3)
+                    perimetro_m = Units.M(r.Perimeter)
                 })
-                .ToList();
-
-            return JsonConvert.SerializeObject(new { total = rooms.Count, ambientes = rooms });
+            };
         }
     }
 }

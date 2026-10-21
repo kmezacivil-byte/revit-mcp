@@ -1,18 +1,19 @@
-﻿using Autodesk.Revit.UI;
+﻿#nullable disable
 using Autodesk.Revit.DB;
-using System.Collections.Generic;
-using Newtonsoft.Json;
+using System;
 using System.Linq;
 
 namespace RevitMcpPlugin.Handlers
 {
-    public class GetLevelsHandler : ICommandHandler
+    public class GetLevelsTool : McpTool
     {
-        public string Execute(Dictionary<string, string> args, Document doc, UIApplication uiApp)
-        {
-            if (doc == null)
-                return JsonConvert.SerializeObject(new { error = "No hay documento activo en Revit" });
+        public override string Name => "get_levels";
+        public override string Description =>
+            "Lista los niveles del proyecto con su elevación en metros y pies, de menor a mayor.";
 
+        public override object Run(ToolArgs args, ToolContext ctx)
+        {
+            var doc = ctx.RequireDoc();
             var levels = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level))
                 .Cast<Level>()
@@ -21,12 +22,12 @@ namespace RevitMcpPlugin.Handlers
                 {
                     id = l.Id.GetId(),
                     nombre = l.Name,
-                    elevacion_m = System.Math.Round(l.Elevation * 0.3048, 4),
-                    elevacion_ft = System.Math.Round(l.Elevation, 4)
+                    elevacion_m = Math.Round(l.Elevation * Units.FeetToMeters, 4),
+                    elevacion_ft = Math.Round(l.Elevation, 4)
                 })
                 .ToList();
 
-            return JsonConvert.SerializeObject(new { total = levels.Count, niveles = levels });
+            return new { total = levels.Count, niveles = levels };
         }
     }
 }

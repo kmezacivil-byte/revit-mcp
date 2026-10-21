@@ -1,25 +1,27 @@
-; ============================================================
-;  Inno Setup Script — RevitMCP Plugin para Revit 2021
+﻿; ============================================================
+;  Inno Setup Script — RevitMCP Plugin para Revit (año via /DMyRevitYear=2021..2025)
 ;  Digital Jump Peru
 ;  Generado para Inno Setup 6.x
 ; ============================================================
 
 #define MyAppName      "RevitMCP Plugin"
-#define MyAppVersion   "1.0.0"
+#define MyAppVersion   "2.0.0"
 #define MyAppPublisher "Digital Jump Peru"
-#define MyRevitYear    "2021"
+#ifndef MyRevitYear
+  #define MyRevitYear  "2021"
+#endif
 #define MyAddInId      "F1E2D3C4-B5A6-7890-ABCD-EF1234567890"
 #define MyAddInFile    "RevitMcpPlugin.addin"
 #define MyDllFile      "RevitMcpPlugin.dll"
 
 [Setup]
-AppId                    ={{F1E2D3C4-B5A6-7890-ABCD-EF1234567890}
+AppId                    ={{F1E2D3C4-B5A6-7890-ABCD-EF12345678{#MyRevitYear}}
 AppName                  ={#MyAppName}
 AppVersion               ={#MyAppVersion}
 AppVerName               ={#MyAppName} {#MyAppVersion} (Revit {#MyRevitYear})
 AppPublisher             ={#MyAppPublisher}
 AppPublisherURL          =https://digitaljumpperu.com
-DefaultDirName           ={commonpf64}\{#MyAppPublisher}\RevitMcpPlugin
+DefaultDirName           ={commonpf64}\{#MyAppPublisher}\RevitMcpPlugin\{#MyRevitYear}
 DefaultGroupName         ={#MyAppName}
 OutputDir                =..\installer
 OutputBaseFilename       =RevitMcpPlugin_{#MyRevitYear}_Setup
@@ -51,8 +53,16 @@ spanish.AddinFailed=No se pudo crear el archivo .addin en:%n%1%n%nVerifica los p
 ;  Archivos a instalar
 ; ─────────────────────────────────────────────
 [Files]
-; Solo el DLL del plugin — Newtonsoft.Json se toma del que ya viene con Revit 2021
-Source: "build-output-2021\{#MyDllFile}"; DestDir: "{app}"; Flags: ignoreversion
+; Plugin (Newtonsoft.Json se toma del que ya viene con Revit) y puente para Claude Desktop
+Source: "build-output-{#MyRevitYear}\{#MyDllFile}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bridge\build-output\RevitMcpBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[Run]
+; Registra el servidor "revit" en Claude Desktop para el usuario que ejecuta el instalador
+Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--install-claude-desktop"; Flags: runasoriginaluser runhidden; StatusMsg: "Configurando Claude Desktop..."
+
+[UninstallRun]
+Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--uninstall-claude-desktop"; Flags: runhidden; RunOnceId: "UnregisterClaudeDesktop"
 
 ; ─────────────────────────────────────────────
 ;  Accesos directos (Inicio)

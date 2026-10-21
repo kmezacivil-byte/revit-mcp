@@ -31,3 +31,8 @@ env/
 
 # Logs de diagnóstico generados en runtime
 *.log
+
+# Puente (bridge)
+bridge/obj/
+bridge/bin/
+bridge/build-output/
