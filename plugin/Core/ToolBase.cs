@@ -78,6 +78,55 @@ namespace RevitMcpPlugin
             return string.Equals((string)t, "true", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>Lista de enteros: acepta un array JSON o texto "1,2,3".</summary>
+        public List<long> LongList(string key)
+        {
+            var result = new List<long>();
+            if (!Has(key)) return result;
+            var t = _o[key];
+            IEnumerable<JToken> items = t is JArray arr
+                ? (IEnumerable<JToken>)arr
+                : Convert.ToString(((JValue)t).Value, CultureInfo.InvariantCulture)
+                    .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => (JToken)s);
+            foreach (var item in items)
+            {
+                if (item.Type == JTokenType.Integer) result.Add((long)item);
+                else if (long.TryParse((string)item, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l)) result.Add(l);
+                else throw new ToolException($"'{key}' debe ser una lista de ids enteros");
+            }
+            return result;
+        }
+
+        public List<long> RequireLongList(string key)
+        {
+            var l = LongList(key);
+            if (l.Count == 0) throw new ToolException($"Falta el parámetro obligatorio '{key}' (lista de ids)");
+            return l;
+        }
+
+        /// <summary>Lista de puntos [[x,y],...] en metros.</summary>
+        public List<double[]> Points(string key, int minPoints)
+        {
+            var pts = new List<double[]>();
+            if (_o[key] is JArray arr)
+                foreach (var p in arr)
+                {
+                    var pa = p as JArray;
+                    if (pa == null || pa.Count < 2) throw new ToolException($"'{key}' debe ser una lista de pares [x, y]");
+                    pts.Add(new[] { (double)pa[0], (double)pa[1] });
+                }
+            if (pts.Count < minPoints) throw new ToolException($"'{key}' necesita al menos {minPoints} puntos [x, y]");
+            return pts;
+        }
+
+        /// <summary>Acciones que modifican o borran muchos elementos exigen confirmar=true.</summary>
+        public void RequireConfirmation(string what)
+        {
+            if (!Bool("confirmar", false))
+                throw new ToolException($"{what}. Muéstrale esto al usuario y, si está de acuerdo, repite la llamada con confirmar=true.");
+        }
+
         /// <summary>Límite de filas devueltas: protege el contexto del modelo de LLM y el tiempo de Revit.</summary>
         public int Limit(string key = "limite", int def = 100, int max = 1000)
         {
@@ -115,6 +164,8 @@ namespace RevitMcpPlugin
         public abstract string Description { get; }
         /// <summary>Si es false, Claude sabe que modifica el modelo.</summary>
         public virtual bool ReadOnly => true;
+        /// <summary>True si modifica o borra elementos existentes (no solo crea): Claude lo trata con más cautela.</summary>
+        public virtual bool Destructive => false;
         public virtual JObject InputSchema => Schema.Object();
         /// <summary>Se ejecuta en el hilo de Revit. Devuelve un objeto serializable.</summary>
         public abstract object Run(ToolArgs args, ToolContext ctx);
@@ -129,7 +180,22 @@ namespace RevitMcpPlugin
         {
             var p = new JObject();
             foreach (var (name, type, desc) in props)
-                p[name] = new JObject { ["type"] = type, ["description"] = desc };
+            {
+                // "integer[]" = lista de enteros; "number[][]" = lista de listas de números (polígonos)
+                var schema = new JObject { ["description"] = desc };
+                JObject target = schema;
+                var baseType = type;
+                while (baseType.EndsWith("[]"))
+                {
+                    baseType = baseType.Substring(0, baseType.Length - 2);
+                    target["type"] = "array";
+                    var items = new JObject();
+                    target["items"] = items;
+                    target = items;
+                }
+                target["type"] = baseType;
+                p[name] = schema;
+            }
             var o = new JObject { ["type"] = "object", ["properties"] = p };
             if (required.Length > 0) o["required"] = new JArray(required);
             return o;
@@ -171,7 +237,7 @@ namespace RevitMcpPlugin
                     ["annotations"] = new JObject
                     {
                         ["readOnlyHint"] = t.ReadOnly,
-                        ["destructiveHint"] = false,
+                        ["destructiveHint"] = t.Destructive,
                         ["idempotentHint"] = t.ReadOnly,
                         ["openWorldHint"] = false
                     }

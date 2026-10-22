@@ -124,6 +124,49 @@ namespace RevitMcpPlugin
 #endif
         }
 
+        /// <summary>Ejecuta una modificación en una transacción con nombre (Ctrl+Z la deshace); revierte si falla.</summary>
+        public static T InTransaction<T>(Document doc, string name, Func<T> action)
+        {
+            using (var tx = new Transaction(doc, name + " (MCP)"))
+            {
+                tx.Start();
+                try
+                {
+                    var result = action();
+                    tx.Commit();
+                    return result;
+                }
+                catch
+                {
+                    if (tx.GetStatus() == TransactionStatus.Started) tx.RollBack();
+                    throw;
+                }
+            }
+        }
+
+        public static Level FindLevel(Document doc, string name)
+        {
+            var levels = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().ToList();
+            var level = string.IsNullOrWhiteSpace(name)
+                ? levels.OrderBy(l => l.Elevation).FirstOrDefault()
+                : levels.FirstOrDefault(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (level == null) throw new ToolException(string.IsNullOrWhiteSpace(name)
+                ? "El proyecto no tiene niveles" : $"Nivel '{name}' no encontrado (usa get_levels)");
+            return level;
+        }
+
+        public static T FindType<T>(Document doc, string name, string kind) where T : Element
+        {
+            var types = new FilteredElementCollector(doc).OfClass(typeof(T)).Cast<T>().ToList();
+            var found = string.IsNullOrWhiteSpace(name)
+                ? types.FirstOrDefault()
+                : types.FirstOrDefault(t => SafeName(t).Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (found == null) throw new ToolException(string.IsNullOrWhiteSpace(name)
+                ? $"El proyecto no tiene {kind}" : $"{kind} '{name}' no encontrado. Disponibles: " +
+                  string.Join(", ", types.Take(15).Select(SafeName)));
+            return found;
+        }
+
         public static Element RequireElement(Document doc, long id)
         {
             var e = doc.GetElement(ToElementId(id));
