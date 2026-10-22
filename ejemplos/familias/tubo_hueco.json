@@ -1,0 +1,25 @@
+{
+  "nombre": "Tubo hueco",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "Diametro_Ext", "tipo": "Longitud" },
+    { "nombre": "Espesor", "tipo": "Longitud" },
+    { "nombre": "Longitud", "tipo": "Longitud" }
+  ],
+  "piezas": [
+    {
+      "tipo": "extrusion",
+      "nombre": "Tubo",
+      "perfil": { "forma": "anillo", "diametro_ext": "Diametro_Ext", "espesor": "Espesor" },
+      "eje": "Y",
+      "desde": 0,
+      "hasta": "Longitud"
+    }
+  ],
+  "tipos": [
+    { "nombre": "125x5", "valores": { "Diametro_Ext": "125 mm", "Espesor": "5 mm", "Longitud": 1 } },
+    { "nombre": "100x5", "valores": { "Diametro_Ext": "100 mm", "Espesor": "5 mm", "Longitud": 1 } }
+  ],
+  "guardar_en": "C:/Familias/Tubo_hueco.rfa",
+  "sobrescribir": true
+}

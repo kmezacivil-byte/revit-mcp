@@ -1,3 +1,4 @@
+#nullable disable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -174,7 +175,7 @@ namespace RevitMcpPlugin
                     return Ok(id, new JObject
                     {
                         ["tools"] = ToolRegistry.ListJson(),
-                        ["ttlMs"] = 3600000,
+                        ["ttlMs"] = 10000,
                         ["cacheScope"] = "private"
                     });
 
@@ -186,7 +187,7 @@ namespace RevitMcpPlugin
             }
         }
 
-        private static JObject Capabilities() => new JObject { ["tools"] = new JObject { ["listChanged"] = false } };
+        private static JObject Capabilities() => new JObject { ["tools"] = new JObject { ["listChanged"] = true } };
         private static JObject ServerInfo() => new JObject { ["name"] = "revit-mcp", ["version"] = "2.0.0" };
 
         private JObject CallTool(JToken id, JObject p)

@@ -1,3 +1,4 @@
+#nullable disable
 using Autodesk.Revit.UI;
 
 namespace RevitMcpPlugin
@@ -12,6 +13,8 @@ namespace RevitMcpPlugin
             Instance = this;
 
             RevitCommandHandler.Initialize();
+            try { Ui.RibbonSetup.Create(application); }
+            catch (System.Exception ex) { TaskDialog.Show("RevitMCP", "No se pudo crear la pestaña RevitMCP: " + ex.Message); }
             _listener = new McpHttpServer();
             try
             {
@@ -30,6 +33,7 @@ namespace RevitMcpPlugin
         public Result OnShutdown(UIControlledApplication application)
         {
             _listener?.Stop();
+            Families.FamilySessions.CloseAll();
             return Result.Succeeded;
         }
     }

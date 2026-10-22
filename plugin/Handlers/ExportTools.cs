@@ -1,5 +1,6 @@
 #nullable disable
 using Autodesk.Revit.DB;
+using RevitMcpPlugin.Families;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -156,30 +157,89 @@ namespace RevitMcpPlugin.Handlers
         }
     }
 
+    /// <summary>Opciones de recarga: Revit pregunta qué hacer cuando la familia (o su versión compartida) ya existe.</summary>
+    public sealed class FamilyLoadOptions : IFamilyLoadOptions
+    {
+        private readonly bool _overwrite;
+        private readonly bool _overwriteParameters;
+
+        public FamilyLoadOptions(bool overwrite, bool overwriteParameters)
+        {
+            _overwrite = overwrite;
+            _overwriteParameters = overwriteParameters;
+        }
+
+        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        {
+            overwriteParameterValues = _overwriteParameters;
+            return _overwrite;
+        }
+
+        public bool OnSharedFamilyFound(Family sharedFamily, bool familyInUse, out FamilySource source, out bool overwriteParameterValues)
+        {
+            source = FamilySource.Family;
+            overwriteParameterValues = _overwriteParameters;
+            return _overwrite;
+        }
+    }
+
     public class LoadFamilyTool : McpTool
     {
         public override string Name => "load_family";
         public override string Description =>
-            "Carga un archivo de familia (.rfa) en el proyecto. Si ya estaba cargada, lo indica y no la sobrescribe.";
+            "Carga una familia en el proyecto, desde un archivo .rfa (ruta) o desde una familia abierta con create_family " +
+            "(familia_doc_id, sin necesidad de guardarla). Si ya existe en el proyecto no la sobrescribe salvo sobrescribir=true; " +
+            "con sobrescribir_parametros=true también reemplaza los valores de parámetros de los tipos existentes.";
         public override bool ReadOnly => false;
+        public override string Example => "{\"ruta\":\"C:/Familias/Tubo_hueco.rfa\",\"sobrescribir\":true,\"sobrescribir_parametros\":true}";
 
-        public override JObject InputSchema => Schema.Object(new[] { "ruta" },
-            ("ruta", "string", "Ruta absoluta del archivo .rfa"));
+        public override JObject InputSchema => Schema.Object(
+            ("ruta", "string", "Ruta absoluta del archivo .rfa"),
+            ("familia_doc_id", "integer", "Id de una familia abierta (alternativa a 'ruta')"),
+            ("sobrescribir", "boolean", "Reemplazar la familia si ya existe en el proyecto (false por defecto)"),
+            ("sobrescribir_parametros", "boolean", "Con sobrescribir, reemplazar también los valores de parámetros (false por defecto)"));
 
         public override object Run(ToolArgs args, ToolContext ctx)
         {
             var doc = ctx.RequireDoc();
-            var path = ExportHelpers.RequireFile(args, "ruta", ".rfa");
+            bool fromSession = args.Has("familia_doc_id");
+            if (fromSession == args.Has("ruta"))
+                throw new ToolException("Indica 'ruta' (archivo .rfa) o 'familia_doc_id' (familia abierta), pero no ambos");
+
+            bool overwrite = args.Bool("sobrescribir", false);
+            var options = new FamilyLoadOptions(overwrite, args.Bool("sobrescribir_parametros", false));
+            var session = fromSession ? Families.FamilySessions.Require(args) : null;
+            var path = fromSession ? null : ExportHelpers.RequireFile(args, "ruta", ".rfa");
 
             return ToolHelpers.InTransaction(doc, "Cargar familia", () =>
             {
-                Family family;
-                bool loaded = doc.LoadFamily(path, out family);
+                Family family = null;
+                bool loaded;
+                try
+                {
+                    if (fromSession)
+                    {
+                        family = session.Doc.LoadFamily(doc, options);
+                        loaded = family != null;
+                    }
+                    else loaded = doc.LoadFamily(path, options, out family);
+                }
+                catch (Exception ex)
+                {
+                    throw new ToolException($"Revit no pudo cargar la familia: {ex.Message}. " +
+                        "Comprueba que el archivo sea una familia válida de esta versión de Revit");
+                }
+
+                var name = family?.Name ?? (fromSession ? session.Name : Path.GetFileNameWithoutExtension(path));
+                var types = family == null ? new List<string>()
+                    : family.GetFamilySymbolIds().Select(id => ToolHelpers.SafeName(doc.GetElement(id))).OrderBy(n => n).ToList();
                 return new
                 {
                     cargada = loaded,
-                    familia = family == null ? Path.GetFileNameWithoutExtension(path) : family.Name,
-                    aviso = loaded ? null : "La familia ya existe en el proyecto; no se sobrescribió"
+                    familia = name,
+                    tipos = types,
+                    aviso = loaded ? null
+                        : "La familia ya existe en el proyecto y no se cargó. Usa sobrescribir=true para reemplazarla"
                 };
             });
         }

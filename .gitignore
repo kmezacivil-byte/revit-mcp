@@ -36,3 +36,7 @@ env/
 bridge/obj/
 bridge/bin/
 bridge/build-output/
+
+# Roslyn y dependencias de Revit 2025 (se regeneran al compilar)
+plugin/build-output-2025/*
+!plugin/build-output-2025/RevitMcpPlugin.dll

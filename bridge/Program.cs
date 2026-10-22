@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 namespace RevitMcpBridge
@@ -15,7 +17,8 @@ namespace RevitMcpBridge
     /// </summary>
     internal static class Program
     {
-        private const string Endpoint = "http://127.0.0.1:5002/mcp";
+        // REVITMCP_ENDPOINT permite apuntar a otro servidor (pruebas).
+        private static readonly string Endpoint = Environment.GetEnvironmentVariable("REVITMCP_ENDPOINT") ?? "http://127.0.0.1:5002/mcp";
         private const string ServerKey = "revit";
 
         private static readonly string TokenFile = Path.Combine(
@@ -36,19 +39,68 @@ namespace RevitMcpBridge
         }
 
         // ── Puente ──────────────────────────────────────────────────────────────
+        private static readonly object OutLock = new object();
+        private static StreamWriter _stdout;
+
+        private static void WriteOut(string line)
+        {
+            lock (OutLock) { _stdout.WriteLine(line); }
+        }
+
         private static int RunBridge()
         {
             var stdin = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
-            var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
+            _stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
+
+            var watcher = new Thread(WatchToolList) { IsBackground = true, Name = "tool-list-watcher" };
+            watcher.Start();
 
             string line;
             while ((line = stdin.ReadLine()) != null)
             {
                 if (line.Trim().Length == 0) continue;
                 var reply = Forward(line);
-                if (reply != null) stdout.WriteLine(reply);
+                if (reply != null) WriteOut(reply);
             }
             return 0;
+        }
+
+        // El plugin puede publicar u ocultar herramientas (p.ej. execute_code al activarla en la ventana de Revit), pero los clientes
+        // MCP leen la lista una sola vez. Este hilo la consulta cada pocos segundos y, si cambia, envía la notificación estándar
+        // notifications/tools/list_changed para que el cliente la vuelva a pedir sin reiniciar.
+        private static void WatchToolList()
+        {
+            const string probe = "{\"jsonrpc\":\"2.0\",\"id\":\"bridge-watch\",\"method\":\"tools/list\"}";
+            string baseline = null;
+            while (true)
+            {
+                Thread.Sleep(2000);
+                try
+                {
+                    var reply = Forward(probe);
+                    if (Environment.GetEnvironmentVariable("REVITMCP_DEBUG") != null) Console.Error.WriteLine("watch reply: " + (reply ?? "null"));
+                    if (reply == null) continue;
+                    var root = Json.DeserializeObject(reply) as Dictionary<string, object>;
+                    var result = root != null && root.ContainsKey("result") ? root["result"] as Dictionary<string, object> : null;
+                    var tools = result != null && result.ContainsKey("tools") ? result["tools"] as IEnumerable : null;   // JavaScriptSerializer devuelve object[]
+                    if (tools == null) continue;      // Revit cerrado o plugin sin token: no es un cambio
+
+                    var names = string.Join("|", tools.Cast<object>()
+                        .Select(t => ((Dictionary<string, object>)t)["name"] as string).OrderBy(n => n, StringComparer.Ordinal));
+                    if (Environment.GetEnvironmentVariable("REVITMCP_DEBUG") != null) Console.Error.WriteLine("watch: " + names);
+                    if (baseline == null) { baseline = names; continue; }
+                    if (names != baseline)
+                    {
+                        baseline = names;
+                        WriteOut("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // el siguiente ciclo reintenta; con REVITMCP_DEBUG se ve el motivo en stderr
+                    if (Environment.GetEnvironmentVariable("REVITMCP_DEBUG") != null) Console.Error.WriteLine("watch: " + ex.Message);
+                }
+            }
         }
 
         // Devuelve la línea a escribir en stdout, o null si no hay respuesta (notificaciones).

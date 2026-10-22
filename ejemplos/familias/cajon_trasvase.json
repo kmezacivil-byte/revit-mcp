@@ -1,0 +1,36 @@
+{
+  "nombre": "Cajon de trasvase EP",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "Ancho", "tipo": "Longitud" },
+    { "nombre": "Largo", "tipo": "Longitud" },
+    { "nombre": "Alto", "tipo": "Longitud" },
+    { "nombre": "Espesor", "tipo": "Longitud" },
+    { "nombre": "Ancho_Int", "tipo": "Longitud", "formula": "Ancho - 2 * Espesor" },
+    { "nombre": "Largo_Int", "tipo": "Longitud", "formula": "Largo - 2 * Espesor" }
+  ],
+  "piezas": [
+    {
+      "tipo": "extrusion",
+      "nombre": "Bloque_exterior",
+      "perfil": { "forma": "rectangulo", "ancho": "Ancho", "alto": "Largo" },
+      "eje": "Z",
+      "desde": 0,
+      "hasta": "Alto"
+    },
+    {
+      "tipo": "extrusion",
+      "nombre": "Hueco_interior",
+      "perfil": { "forma": "rectangulo", "ancho": "Ancho_Int", "alto": "Largo_Int" },
+      "eje": "Z",
+      "desde": "Espesor",
+      "hasta": "Alto",
+      "es_vacio": true
+    }
+  ],
+  "tipos": [
+    { "nombre": "500x500x200", "valores": { "Ancho": "500 mm", "Largo": "500 mm", "Alto": "200 mm", "Espesor": "5 mm" } }
+  ],
+  "guardar_en": "C:/Familias/Cajon_trasvase.rfa",
+  "sobrescribir": true
+}

@@ -1,0 +1,25 @@
+{
+  "nombre": "Perfil cajon rectangular",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "B", "tipo": "Longitud" },
+    { "nombre": "H", "tipo": "Longitud" },
+    { "nombre": "Espesor", "tipo": "Longitud" },
+    { "nombre": "Longitud", "tipo": "Longitud" }
+  ],
+  "piezas": [
+    {
+      "tipo": "extrusion",
+      "nombre": "Cajon",
+      "perfil": { "forma": "cajon", "ancho": "B", "alto": "H", "espesor": "Espesor" },
+      "eje": "Y",
+      "desde": 0,
+      "hasta": "Longitud"
+    }
+  ],
+  "tipos": [
+    { "nombre": "100x50x4", "valores": { "B": "100 mm", "H": "50 mm", "Espesor": "4 mm", "Longitud": 1 } }
+  ],
+  "guardar_en": "C:/Familias/Perfil_cajon.rfa",
+  "sobrescribir": true
+}

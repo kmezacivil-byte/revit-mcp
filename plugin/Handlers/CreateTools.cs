@@ -1,5 +1,6 @@
 #nullable disable
 using Autodesk.Revit.DB;
+using RevitMcpPlugin.Families;
 using Autodesk.Revit.DB.Structure;
 using Newtonsoft.Json.Linq;
 using System;
@@ -196,30 +197,64 @@ namespace RevitMcpPlugin.Handlers
     {
         public override string Name => "create_view";
         public override string Description =>
-            "Crea una vista: \"planta\" (plano de planta de un nivel) o \"3d\" (isométrica).";
+            "Crea una vista: \"planta\" (plano de planta de un nivel), \"3d\" (isométrica) o \"seccion\" (corte vertical). " +
+            "Para la sección indica el punto por el que pasa el corte (centro), hacia dónde mira (direccion, horizontal), " +
+            "y el tamaño del recuadro (ancho_m, alto_m) y la profundidad visible (profundidad_m).";
         public override bool ReadOnly => false;
+        public override string Example => "{\"tipo\":\"seccion\",\"centro\":[0,0,1.5],\"direccion\":[0,1,0],\"ancho_m\":6,\"alto_m\":4,\"profundidad_m\":3,\"nombre\":\"Corte A\"}";
 
         public override JObject InputSchema => Schema.Object(new[] { "tipo" },
-            ("tipo", "string", "\"planta\" o \"3d\""),
+            ("tipo", "string", "\"planta\", \"3d\" o \"seccion\""),
             ("nivel", "string", "Nivel para la planta; vacío = el más bajo"),
-            ("nombre", "string", "Nombre de la vista (opcional)"));
+            ("nombre", "string", "Nombre de la vista (opcional)"),
+            ("centro", "number[]", "Sección: punto [x,y,z] del corte en metros"),
+            ("direccion", "number[]", "Sección: hacia dónde mira, [dx,dy,0]; [0,1,0] mira al norte"),
+            ("ancho_m", "number", "Sección: ancho del recuadro (6 por defecto)"),
+            ("alto_m", "number", "Sección: alto del recuadro (4 por defecto)"),
+            ("profundidad_m", "number", "Sección: profundidad visible (3 por defecto)"));
 
         public override object Run(ToolArgs args, ToolContext ctx)
         {
             var doc = ctx.RequireDoc();
             var tipo = args.RequireStr("tipo").ToLowerInvariant();
             var nombre = args.Str("nombre");
-            if (tipo != "planta" && tipo != "3d") throw new ToolException("'tipo' debe ser \"planta\" o \"3d\"");
+            if (tipo != "planta" && tipo != "3d" && tipo != "seccion") throw new ToolException("'tipo' debe ser \"planta\", \"3d\" o \"seccion\"");
 
-            var family = tipo == "planta" ? ViewFamily.FloorPlan : ViewFamily.ThreeDimensional;
+            var family = tipo == "planta" ? ViewFamily.FloorPlan : tipo == "3d" ? ViewFamily.ThreeDimensional : ViewFamily.Section;
             var vft = new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>()
                 .FirstOrDefault(v => v.ViewFamily == family);
             if (vft == null) throw new ToolException("El proyecto no tiene un tipo de vista para eso");
             var level = tipo == "planta" ? ToolHelpers.FindLevel(doc, args.Str("nivel")) : null;
 
+            BoundingBoxXYZ box = null;
+            if (tipo == "seccion")
+            {
+                var c = args.Vec3("centro");
+                var d = args.Vec3("direccion", new double[] { 0, 1, 0 });
+                if (c == null) throw new ToolException("La sección necesita 'centro' [x,y,z] en metros");
+                var look = new XYZ(d[0], d[1], 0);
+                if (look.GetLength() < 1e-9) throw new ToolException("'direccion' debe tener componente horizontal, p.ej. [0,1,0]");
+                look = look.Normalize();
+                double w = args.Dbl("ancho_m", 6) / Units.FeetToMeters, h = args.Dbl("alto_m", 4) / Units.FeetToMeters,
+                       depth = args.Dbl("profundidad_m", 3) / Units.FeetToMeters;
+                if (w <= 0 || h <= 0 || depth <= 0) throw new ToolException("ancho_m, alto_m y profundidad_m deben ser positivos");
+
+                // BasisZ apunta hacia quien mira; el corte avanza hacia -Z.
+                var zAxis = -look;
+                var yAxis = XYZ.BasisZ;
+                var t = Transform.Identity;
+                t.Origin = new XYZ(c[0], c[1], c[2]) / Units.FeetToMeters;
+                t.BasisZ = zAxis;
+                t.BasisY = yAxis;
+                t.BasisX = yAxis.CrossProduct(zAxis);
+                box = new BoundingBoxXYZ { Transform = t, Min = new XYZ(-w / 2, -h / 2, -depth), Max = new XYZ(w / 2, h / 2, 0) };
+            }
+
             return ToolHelpers.InTransaction(doc, "Crear vista", () =>
             {
-                View view = tipo == "planta" ? (View)ViewPlan.Create(doc, vft.Id, level.Id) : View3D.CreateIsometric(doc, vft.Id);
+                View view = tipo == "planta" ? (View)ViewPlan.Create(doc, vft.Id, level.Id)
+                    : tipo == "3d" ? View3D.CreateIsometric(doc, vft.Id)
+                    : ViewSection.CreateSection(doc, vft.Id, box);
                 if (nombre != "")
                 {
                     try { view.Name = nombre; }
@@ -234,10 +269,12 @@ namespace RevitMcpPlugin.Handlers
     {
         public override string Name => "place_family_instance";
         public override string Description =>
-            "Coloca una instancia de familia en un punto (m) sobre un nivel. Sirve para familias sin anfitrión " +
-            "(mobiliario, equipos, columnas). Las puertas y ventanas necesitan un muro anfitrión y no se soportan aquí. " +
-            "Usa get_families para ver familias y tipos.";
+            "Coloca una instancia de familia en un punto (m) sobre un nivel, con rotación en X/Y/Z y valores iniciales de parámetros " +
+            "de instancia. Para familias con anfitrión (puertas, ventanas) indica 'anfitrion' (id del muro); " +
+            "create_door/create_window colocan a lo largo del muro con más comodidad. Usa get_families para ver familias y tipos. " +
+            "parametros_iniciales: longitudes en metros (o \"125 mm\"), ángulos en grados; los parámetros de tipo se cambian con set_parameter en_tipo=true.";
         public override bool ReadOnly => false;
+        public override string Example => "{\"familia\":\"Pescante giratorio\",\"tipo\":\"Std\",\"x\":2,\"y\":3,\"rotacion_grados\":90,\"parametros_iniciales\":{\"Altura_Total\":\"3.2\"}}";
 
         public override JObject InputSchema => Schema.Object(new[] { "familia", "x", "y" },
             ("familia", "string", "Nombre exacto de la familia"),
@@ -245,7 +282,11 @@ namespace RevitMcpPlugin.Handlers
             ("x", "number", "X (m)"), ("y", "number", "Y (m)"),
             ("z", "number", "Desfase vertical sobre el nivel en metros (0 por defecto)"),
             ("nivel", "string", "Nombre del nivel; vacío = el más bajo"),
-            ("rotacion_grados", "number", "Giro alrededor de Z en grados (0 por defecto)"));
+            ("rotacion_grados", "number", "Giro alrededor de Z en grados (0 por defecto)"),
+            ("rotacion_x_grados", "number", "Giro alrededor de X en grados (0 por defecto)"),
+            ("rotacion_y_grados", "number", "Giro alrededor de Y en grados (0 por defecto)"),
+            ("anfitrion", "integer", "Id del elemento anfitrión (muro, piso...) si la familia lo requiere"),
+            ("parametros_iniciales", "object", "Valores de parámetros de instancia: {\"nombre\": \"valor\", ...}"));
 
         public override object Run(ToolArgs args, ToolContext ctx)
         {
@@ -265,20 +306,56 @@ namespace RevitMcpPlugin.Handlers
 
             var point = new XYZ(args.RequireDbl("x") / Units.FeetToMeters, args.RequireDbl("y") / Units.FeetToMeters,
                 level.Elevation + args.Dbl("z", 0) / Units.FeetToMeters);
-            var angle = args.Dbl("rotacion_grados", 0) * Math.PI / 180.0;
+            var host = args.Has("anfitrion") ? ToolHelpers.RequireElement(doc, args.RequireLong("anfitrion")) : null;
+            var initial = args.Obj("parametros_iniciales");
+            var rotations = new[] { args.Dbl("rotacion_x_grados", 0), args.Dbl("rotacion_y_grados", 0), args.Dbl("rotacion_grados", 0) };
+            var axes = new[] { XYZ.BasisX, XYZ.BasisY, XYZ.BasisZ };
 
             return ToolHelpers.InTransaction(doc, "Colocar familia", () =>
             {
                 if (!symbol.IsActive) { symbol.Activate(); doc.Regenerate(); }
                 FamilyInstance inst;
-                try { inst = doc.Create.NewFamilyInstance(point, symbol, level, StructuralType.NonStructural); }
+                try
+                {
+                    inst = host != null
+                        ? doc.Create.NewFamilyInstance(point, symbol, host, level, StructuralType.NonStructural)
+                        : doc.Create.NewFamilyInstance(point, symbol, level, StructuralType.NonStructural);
+                }
                 catch (Autodesk.Revit.Exceptions.InvalidOperationException)
                 {
-                    throw new ToolException("Esta familia requiere un anfitrión (muro, piso...) y no se puede colocar en un punto libre");
+                    throw new ToolException(host == null
+                        ? "Esta familia requiere un anfitrión (muro, piso...): indica 'anfitrion' con su id"
+                        : "Revit no pudo colocar la familia en ese anfitrión (¿tipo de anfitrión incompatible?)");
                 }
-                if (Math.Abs(angle) > 1e-9)
-                    ElementTransformUtils.RotateElement(doc, inst.Id, Line.CreateBound(point, point + XYZ.BasisZ), angle);
-                return new { id = inst.Id.GetId(), familia = symbol.FamilyName, tipo = ToolHelpers.SafeName(symbol), nivel = level.Name };
+                catch (Autodesk.Revit.Exceptions.ArgumentException ex)
+                {
+                    throw new ToolException($"Revit rechazó la colocación: {ex.Message}");
+                }
+
+                for (int i = 0; i < 3; i++)
+                    if (Math.Abs(rotations[i]) > 1e-9)
+                        ElementTransformUtils.RotateElement(doc, inst.Id, Line.CreateBound(point, point + axes[i]), rotations[i] * Math.PI / 180.0);
+
+                if (initial != null)
+                    foreach (var prop in initial.Properties())
+                    {
+                        var p = inst.LookupParameter(prop.Name);
+                        if (p == null)
+                            throw new ToolException($"La instancia no tiene un parámetro de instancia '{prop.Name}'. " +
+                                "Si es un parámetro de tipo, usa set_parameter con en_tipo=true");
+                        if (p.IsReadOnly) throw new ToolException($"El parámetro '{prop.Name}' es de solo lectura");
+                        ModifyHelpers.ApplyParameter(p, Convert.ToString((prop.Value as JValue)?.Value, System.Globalization.CultureInfo.InvariantCulture), prop.Name);
+                    }
+
+                return new
+                {
+                    id = inst.Id.GetId(),
+                    familia = symbol.FamilyName,
+                    tipo = ToolHelpers.SafeName(symbol),
+                    nivel = level.Name,
+                    anfitrion = host?.Id.GetId(),
+                    parametros_aplicados = initial?.Properties().Select(x => x.Name)
+                };
             });
         }
     }

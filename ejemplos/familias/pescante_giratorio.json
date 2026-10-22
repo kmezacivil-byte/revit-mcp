@@ -1,0 +1,85 @@
+{
+  "nombre": "Pescante giratorio",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "Altura_Total", "tipo": "Longitud", "valor": 3.2 },
+    { "nombre": "Altura_Fijo", "tipo": "Longitud", "valor": 2.3 },
+    { "nombre": "Solape", "tipo": "Longitud", "valor": 0.3 },
+    { "nombre": "Largo_Brazo", "tipo": "Longitud", "valor": 1.5 },
+    { "nombre": "Pos_Carro", "tipo": "Longitud", "valor": 1.2 },
+    { "nombre": "Placa_Lado", "tipo": "Longitud", "valor": "400 mm" },
+    { "nombre": "Esp_Placa", "tipo": "Longitud", "valor": "12 mm" },
+    { "nombre": "Diam_Fijo", "tipo": "Longitud", "valor": "88.9 mm" },
+    { "nombre": "Esp_Fijo", "tipo": "Longitud", "valor": "3.2 mm" },
+    { "nombre": "Diam_Giratorio", "tipo": "Longitud", "valor": "73 mm" },
+    { "nombre": "Esp_Giratorio", "tipo": "Longitud", "valor": "3 mm" },
+    { "nombre": "Diam_Collar", "tipo": "Longitud", "valor": "100 mm" },
+    { "nombre": "Esp_Collar", "tipo": "Longitud", "valor": "5.5 mm" },
+    { "nombre": "IPE_h", "tipo": "Longitud", "valor": "120 mm" },
+    { "nombre": "IPE_b", "tipo": "Longitud", "valor": "64 mm" },
+    { "nombre": "IPE_tw", "tipo": "Longitud", "valor": "4.4 mm" },
+    { "nombre": "IPE_tf", "tipo": "Longitud", "valor": "6.3 mm" },
+    { "nombre": "Z_Inicio_Giratorio", "tipo": "Longitud", "formula": "Altura_Fijo - Solape" },
+    { "nombre": "Radio_Giratorio", "tipo": "Longitud", "formula": "Diam_Giratorio / 2" },
+    { "nombre": "Z_Brazo", "tipo": "Longitud", "formula": "Altura_Total - IPE_h / 2" },
+    { "nombre": "Z_Brazo_Inf", "tipo": "Longitud", "formula": "Altura_Total - IPE_h" },
+    { "nombre": "Z_Collar_Ini", "tipo": "Longitud", "formula": "Altura_Fijo - 25 mm" },
+    { "nombre": "Z_Collar_Fin", "tipo": "Longitud", "formula": "Altura_Fijo + 25 mm" },
+    { "nombre": "Z_Carro_Ini", "tipo": "Longitud", "formula": "Z_Brazo_Inf - 60 mm" },
+    { "nombre": "Z_Tecle_Ini", "tipo": "Longitud", "formula": "Z_Brazo_Inf - 300 mm" },
+    { "nombre": "Z_Cadena_Ini", "tipo": "Longitud", "formula": "Z_Brazo_Inf - 800 mm" }
+  ],
+  "piezas": [
+    { "tipo": "extrusion", "nombre": "Placa_base",
+      "perfil": { "forma": "rectangulo", "ancho": "Placa_Lado", "alto": "Placa_Lado" },
+      "eje": "Z", "desde": 0, "hasta": "Esp_Placa" },
+
+    { "tipo": "extrusion", "nombre": "Tubo_fijo",
+      "perfil": { "forma": "anillo", "diametro_ext": "Diam_Fijo", "espesor": "Esp_Fijo" },
+      "eje": "Z", "desde": "Esp_Placa", "hasta": "Altura_Fijo" },
+
+    { "tipo": "extrusion", "nombre": "Tubo_giratorio",
+      "perfil": { "forma": "anillo", "diametro_ext": "Diam_Giratorio", "espesor": "Esp_Giratorio" },
+      "eje": "Z", "desde": "Z_Inicio_Giratorio", "hasta": "Altura_Total" },
+
+    { "tipo": "extrusion", "nombre": "Collar_apoyo",
+      "perfil": { "forma": "anillo", "diametro_ext": "Diam_Collar", "espesor": "Esp_Collar" },
+      "eje": "Z", "desde": "Z_Collar_Ini", "hasta": "Z_Collar_Fin" },
+
+    { "tipo": "extrusion", "nombre": "Brazo_IPE120",
+      "perfil": { "forma": "perfil_I", "h": "IPE_h", "b": "IPE_b", "tw": "IPE_tw", "tf": "IPE_tf", "centro": [0, "Z_Brazo"] },
+      "eje": "X", "desde": "Radio_Giratorio", "hasta": "Largo_Brazo" },
+
+    { "tipo": "extrusion", "nombre": "Diagonal_45",
+      "perfil": { "forma": "poligono", "puntos": [[0.0012, 2.6318], [0.0720, 2.5610], [0.5210, 3.0100], [0.4502, 3.0808]] },
+      "eje": "Y", "desde": -0.025, "hasta": 0.025 },
+
+    { "tipo": "extrusion", "nombre": "Cartela_X_pos",
+      "perfil": { "forma": "poligono", "puntos": [[0.0445, 0.012], [0.20, 0.012], [0.0445, 0.22]] },
+      "eje": "Y", "desde": -0.004, "hasta": 0.004 },
+    { "tipo": "extrusion", "nombre": "Cartela_X_neg",
+      "perfil": { "forma": "poligono", "puntos": [[-0.0445, 0.012], [-0.0445, 0.22], [-0.20, 0.012]] },
+      "eje": "Y", "desde": -0.004, "hasta": 0.004 },
+    { "tipo": "extrusion", "nombre": "Cartela_Y_pos",
+      "perfil": { "forma": "poligono", "puntos": [[0.0445, 0.012], [0.20, 0.012], [0.0445, 0.22]] },
+      "eje": "X", "desde": -0.004, "hasta": 0.004 },
+    { "tipo": "extrusion", "nombre": "Cartela_Y_neg",
+      "perfil": { "forma": "poligono", "puntos": [[-0.0445, 0.012], [-0.0445, 0.22], [-0.20, 0.012]] },
+      "eje": "X", "desde": -0.004, "hasta": 0.004 },
+
+    { "tipo": "extrusion", "nombre": "Carro",
+      "perfil": { "forma": "rectangulo", "ancho": "140 mm", "alto": "100 mm", "centro": ["Pos_Carro", 0] },
+      "eje": "Z", "desde": "Z_Carro_Ini", "hasta": "Z_Brazo_Inf" },
+
+    { "tipo": "extrusion", "nombre": "Tecle",
+      "perfil": { "forma": "rectangulo", "ancho": "160 mm", "alto": "160 mm", "centro": ["Pos_Carro", 0] },
+      "eje": "Z", "desde": "Z_Tecle_Ini", "hasta": "Z_Carro_Ini" },
+
+    { "tipo": "extrusion", "nombre": "Cadena",
+      "perfil": { "forma": "circulo", "diametro": "12 mm", "centro": ["Pos_Carro", 0] },
+      "eje": "Z", "desde": "Z_Cadena_Ini", "hasta": "Z_Tecle_Ini" }
+  ],
+  "tipos": [ { "nombre": "Std" } ],
+  "guardar_en": "C:/Familias/Pescante_giratorio.rfa",
+  "sobrescribir": true
+}

@@ -54,7 +54,12 @@ spanish.AddinFailed=No se pudo crear el archivo .addin en:%n%1%n%nVerifica los p
 ; ─────────────────────────────────────────────
 [Files]
 ; Plugin (Newtonsoft.Json se toma del que ya viene con Revit) y puente para Claude Desktop
+#if MyRevitYear == "2025"
+; Revit 2025: el plugin + Roslyn (motor de scripts de execute_code) + RevitMcpPlugin.deps.json
+Source: "build-output-2025\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs
+#else
 Source: "build-output-{#MyRevitYear}\{#MyDllFile}"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 Source: "..\bridge\build-output\RevitMcpBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]

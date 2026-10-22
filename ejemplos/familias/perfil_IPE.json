@@ -1,0 +1,26 @@
+{
+  "nombre": "Perfil IPE",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "h", "tipo": "Longitud" },
+    { "nombre": "b", "tipo": "Longitud" },
+    { "nombre": "tw", "tipo": "Longitud" },
+    { "nombre": "tf", "tipo": "Longitud" },
+    { "nombre": "Longitud", "tipo": "Longitud" }
+  ],
+  "piezas": [
+    {
+      "tipo": "extrusion",
+      "nombre": "Viga",
+      "perfil": { "forma": "perfil_I", "h": "h", "b": "b", "tw": "tw", "tf": "tf" },
+      "eje": "X",
+      "desde": 0,
+      "hasta": "Longitud"
+    }
+  ],
+  "tipos": [
+    { "nombre": "IPE120", "valores": { "h": "120 mm", "b": "64 mm", "tw": "4.4 mm", "tf": "6.3 mm", "Longitud": 1 } }
+  ],
+  "guardar_en": "C:/Familias/Perfil_IPE.rfa",
+  "sobrescribir": true
+}

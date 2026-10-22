@@ -136,9 +136,13 @@ namespace RevitMcpPlugin
                     tx.Commit();
                     return result;
                 }
-                catch
+                catch (Exception ex)
                 {
                     if (tx.GetStatus() == TransactionStatus.Started) tx.RollBack();
+                    if (ex is ToolException) throw;
+                    // Las excepciones de la API de Revit traen mensajes crípticos: se envuelven con la operación que falló.
+                    if (ex is Autodesk.Revit.Exceptions.ApplicationException)
+                        throw new ToolException($"Revit rechazó la operación «{name}» y se revirtió por completo: {ex.GetType().Name}: {ex.Message}");
                     throw;
                 }
             }

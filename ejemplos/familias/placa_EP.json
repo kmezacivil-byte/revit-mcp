@@ -1,0 +1,24 @@
+{
+  "nombre": "Placa metalica EP",
+  "categoria": "modelo_generico",
+  "parametros": [
+    { "nombre": "Largo", "tipo": "Longitud" },
+    { "nombre": "Ancho", "tipo": "Longitud" },
+    { "nombre": "Espesor", "tipo": "Longitud" }
+  ],
+  "piezas": [
+    {
+      "tipo": "extrusion",
+      "nombre": "Placa",
+      "perfil": { "forma": "rectangulo", "ancho": "Ancho", "alto": "Largo" },
+      "eje": "Z",
+      "desde": 0,
+      "hasta": "Espesor"
+    }
+  ],
+  "tipos": [
+    { "nombre": "300x200x10", "valores": { "Largo": "300 mm", "Ancho": "200 mm", "Espesor": "10 mm" } }
+  ],
+  "guardar_en": "C:/Familias/Placa_EP.rfa",
+  "sobrescribir": true
+}

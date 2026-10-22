@@ -1,5 +1,6 @@
 #nullable disable
 using Autodesk.Revit.DB;
+using RevitMcpPlugin.Families;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -19,6 +20,45 @@ namespace RevitMcpPlugin.Handlers
             var missing = ids.Where(i => doc.GetElement(ToolHelpers.ToElementId(i)) == null).ToList();
             if (missing.Count > 0) throw new ToolException("No existen elementos con id: " + string.Join(", ", missing.Take(10)));
             return ids.Select(ToolHelpers.ToElementId).ToList();
+        }
+
+        /// <summary>
+        /// Asigna un valor de texto a un parámetro. Longitudes: número = metros (o con unidad, "125 mm"); ángulos: número = grados.
+        /// Otras magnitudes con unidades (área, volumen...) se interpretan en las unidades del proyecto.
+        /// </summary>
+        public static void ApplyParameter(Parameter p, string valor, string nombre)
+        {
+            bool ok;
+            switch (p.StorageType)
+            {
+                case StorageType.String:
+                    ok = p.Set(valor);
+                    break;
+                case StorageType.Integer:
+                    if (int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)) ok = p.Set(i);
+                    else if (FamilyValues.KindOf(p.Definition) == ParamKind.YesNo)
+                    {
+                        var t = FamilyHelpers.Normalize(valor);
+                        ok = p.Set(t == "true" || t == "si" || t == "yes" ? 1 : 0);
+                    }
+                    else ok = p.SetValueString(valor);
+                    break;
+                case StorageType.Double:
+                    var kind = FamilyValues.KindOf(p.Definition);
+                    if (kind == ParamKind.Length && FamilyValues.IsNumeric(valor)) ok = p.Set(FamilyValues.LengthFeet(valor));
+                    else if (kind == ParamKind.Angle && FamilyValues.IsNumeric(valor)) ok = p.Set(FamilyValues.AngleRadians(valor));
+                    else ok = p.SetValueString(valor) ||
+                              (double.TryParse(valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) && p.Set(d));
+                    break;
+                case StorageType.ElementId:
+                    if (!long.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+                        throw new ToolException($"El parámetro '{nombre}' espera el id de otro elemento");
+                    ok = p.Set(ToolHelpers.ToElementId(id));
+                    break;
+                default:
+                    throw new ToolException($"El tipo de dato del parámetro '{nombre}' no es modificable");
+            }
+            if (!ok) throw new ToolException($"Revit rechazó el valor '{valor}' para '{nombre}'");
         }
 
         public static Color ParseColor(string text)
@@ -41,9 +81,9 @@ namespace RevitMcpPlugin.Handlers
     {
         public override string Name => "set_parameter";
         public override string Description =>
-            "Cambia el valor de un parámetro de un elemento. Los números con unidad se interpretan en las unidades " +
-            "del proyecto (p.ej. \"2500\" si el proyecto está en mm). Con en_tipo=true modifica el parámetro del tipo, " +
-            "lo que afecta a todos los elementos de ese tipo.";
+            "Cambia el valor de un parámetro de un elemento. Longitudes: un número son metros, o añade la unidad " +
+            "(\"125 mm\"); ángulos en grados. Con en_tipo=true modifica el parámetro del tipo, lo que afecta a todos " +
+            "los elementos de ese tipo.";
         public override bool ReadOnly => false;
         public override bool Destructive => true;
 
@@ -70,29 +110,7 @@ namespace RevitMcpPlugin.Handlers
             var before = ToolHelpers.ParamValue(doc, p);
             return ToolHelpers.InTransaction(doc, "Cambiar parámetro", () =>
             {
-                bool ok;
-                switch (p.StorageType)
-                {
-                    case StorageType.String:
-                        ok = p.Set(valor);
-                        break;
-                    case StorageType.Integer:
-                        ok = int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)
-                            ? p.Set(i) : p.SetValueString(valor);
-                        break;
-                    case StorageType.Double:
-                        ok = p.SetValueString(valor) ||
-                             (double.TryParse(valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) && p.Set(d));
-                        break;
-                    case StorageType.ElementId:
-                        if (!long.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-                            throw new ToolException("Este parámetro espera el id de otro elemento");
-                        ok = p.Set(ToolHelpers.ToElementId(id));
-                        break;
-                    default:
-                        throw new ToolException("Tipo de parámetro no soportado");
-                }
-                if (!ok) throw new ToolException($"Revit rechazó el valor '{valor}' para '{nombre}'");
+                ModifyHelpers.ApplyParameter(p, valor, nombre);
                 return new { id = e.Id.GetId(), parametro = nombre, valor_anterior = before, valor_nuevo = ToolHelpers.ParamValue(doc, p) };
             });
         }

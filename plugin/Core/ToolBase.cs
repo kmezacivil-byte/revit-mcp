@@ -120,6 +120,37 @@ namespace RevitMcpPlugin
             return pts;
         }
 
+        public JToken Token(string key) => Has(key) ? _o[key] : null;
+
+        public JObject Obj(string key)
+        {
+            if (!Has(key)) return null;
+            if (_o[key] is JObject o) return o;
+            throw new ToolException($"'{key}' debe ser un objeto JSON");
+        }
+
+        public JObject RequireObj(string key) => Obj(key) ?? throw new ToolException($"Falta el parámetro obligatorio '{key}' (objeto JSON)");
+
+        /// <summary>Lista de textos: acepta un array JSON o un texto separado por comas.</summary>
+        public List<string> StrList(string key)
+        {
+            var result = new List<string>();
+            if (!Has(key)) return result;
+            if (_o[key] is JArray arr) result.AddRange(arr.Select(t => Convert.ToString((t as JValue)?.Value, CultureInfo.InvariantCulture)));
+            else result.AddRange(Str(key).Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()));
+            return result.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+        }
+
+        /// <summary>Vector de tres números [x,y,z] (en metros u otra unidad según la tool).</summary>
+        public double[] Vec3(string key, double[] def = null)
+        {
+            if (!Has(key)) return def;
+            var a = _o[key] as JArray;
+            if (a == null || a.Count != 3) throw new ToolException($"'{key}' debe ser una lista de 3 números [x, y, z]");
+            try { return new[] { (double)a[0], (double)a[1], (double)a[2] }; }
+            catch { throw new ToolException($"'{key}' debe contener solo números"); }
+        }
+
         /// <summary>Acciones que modifican o borran muchos elementos exigen confirmar=true.</summary>
         public void RequireConfirmation(string what)
         {
@@ -167,6 +198,10 @@ namespace RevitMcpPlugin
         /// <summary>True si modifica o borra elementos existentes (no solo crea): Claude lo trata con más cautela.</summary>
         public virtual bool Destructive => false;
         public virtual JObject InputSchema => Schema.Object();
+        /// <summary>Ejemplo de argumentos (JSON). Se publica en 'examples' del esquema y al final de la descripción.</summary>
+        public virtual string Example => null;
+        /// <summary>Si es false la tool no aparece en tools/list (p.ej. funciones que el usuario debe habilitar a mano).</summary>
+        public virtual bool Available => true;
         /// <summary>Se ejecuta en el hilo de Revit. Devuelve un objeto serializable.</summary>
         public abstract object Run(ToolArgs args, ToolContext ctx);
     }
@@ -225,15 +260,26 @@ namespace RevitMcpPlugin
         public static McpTool Find(string name) =>
             name != null && ByName.TryGetValue(name, out var t) ? t : null;
 
+        private static JObject WithExample(McpTool t)
+        {
+            var schema = t.InputSchema;
+            if (t.Example != null)
+            {
+                // Un ejemplo mal escrito no debe romper tools/list: simplemente no se publica en el esquema.
+                try { schema["examples"] = new JArray(JToken.Parse(t.Example)); } catch (JsonReaderException) { }
+            }
+            return schema;
+        }
+
         public static JArray ListJson()
         {
             var arr = new JArray();
-            foreach (var t in Tools)
+            foreach (var t in Tools.Where(x => x.Available))
                 arr.Add(new JObject
                 {
                     ["name"] = t.Name,
-                    ["description"] = t.Description,
-                    ["inputSchema"] = t.InputSchema,
+                    ["description"] = t.Example == null ? t.Description : t.Description + " Ejemplo: " + t.Example,
+                    ["inputSchema"] = WithExample(t),
                     ["annotations"] = new JObject
                     {
                         ["readOnlyHint"] = t.ReadOnly,
