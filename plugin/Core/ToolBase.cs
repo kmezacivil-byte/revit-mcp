@@ -202,6 +202,8 @@ namespace RevitMcpPlugin
         public virtual string Example => null;
         /// <summary>Si es false la tool no aparece en tools/list (p.ej. funciones que el usuario debe habilitar a mano).</summary>
         public virtual bool Available => true;
+        /// <summary>Segura para el acceso remoto de solo lectura: no modifica el modelo ni escribe archivos.</summary>
+        public virtual bool RemoteSafe => ReadOnly && !Destructive;
         /// <summary>Se ejecuta en el hilo de Revit. Devuelve un objeto serializable.</summary>
         public abstract object Run(ToolArgs args, ToolContext ctx);
     }
@@ -260,26 +262,24 @@ namespace RevitMcpPlugin
         public static McpTool Find(string name) =>
             name != null && ByName.TryGetValue(name, out var t) ? t : null;
 
-        private static JObject WithExample(McpTool t)
+        /// <summary>Una herramienta es visible si está disponible, entra en el perfil activo y, en modo remoto de solo lectura, es de solo lectura.</summary>
+        public static bool Visible(McpTool t, bool remote)
         {
-            var schema = t.InputSchema;
-            if (t.Example != null)
-            {
-                // Un ejemplo mal escrito no debe romper tools/list: simplemente no se publica en el esquema.
-                try { schema["examples"] = new JArray(JToken.Parse(t.Example)); } catch (JsonReaderException) { }
-            }
-            return schema;
+            if (!t.Available) return false;
+            if (!ToolProfiles.Includes(McpConfig.Profile, t)) return false;
+            if (remote && McpConfig.RemoteReadOnly && !t.RemoteSafe) return false;
+            return true;
         }
 
-        public static JArray ListJson()
+        public static JArray ListJson(bool remote = false)
         {
             var arr = new JArray();
-            foreach (var t in Tools.Where(x => x.Available))
+            foreach (var t in Tools.Where(x => Visible(x, remote)))
                 arr.Add(new JObject
                 {
                     ["name"] = t.Name,
                     ["description"] = t.Example == null ? t.Description : t.Description + " Ejemplo: " + t.Example,
-                    ["inputSchema"] = WithExample(t),
+                    ["inputSchema"] = t.InputSchema,   // sin "examples": el ejemplo va al final de la descripción (compatibilidad con Gemini/OpenAI)
                     ["annotations"] = new JObject
                     {
                         ["readOnlyHint"] = t.ReadOnly,

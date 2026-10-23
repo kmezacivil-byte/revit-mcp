@@ -1,4 +1,4 @@
-#if REVIT2025
+#if REVIT_MODERN
 #nullable disable
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;

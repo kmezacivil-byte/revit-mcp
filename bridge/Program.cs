@@ -33,8 +33,19 @@ namespace RevitMcpBridge
 
         private static int Main(string[] args)
         {
-            if (args.Length > 0 && args[0] == "--install-claude-desktop") return EditClaudeConfig(true);
-            if (args.Length > 0 && args[0] == "--uninstall-claude-desktop") return EditClaudeConfig(false);
+            if (args.Length > 0)
+            {
+                switch (args[0])
+                {
+                    // Compatibilidad con instaladores anteriores
+                    case "--install-claude-desktop": return Manage(true, "claude-desktop");
+                    case "--uninstall-claude-desktop": return Manage(false, "claude-desktop");
+                    case "--install": return Manage(true, args.Length > 1 ? args[1] : "all");
+                    case "--uninstall": return Manage(false, args.Length > 1 ? args[1] : "all");
+                    case "--list": return List();
+                    case "--help": case "-h": return Help();
+                }
+            }
             return RunBridge();
         }
 
@@ -169,43 +180,143 @@ namespace RevitMcpBridge
             });
         }
 
-        // ── Registro en Claude Desktop ─────────────────────────────────────────
-        private static int EditClaudeConfig(bool install)
+        // ── Registro en clientes MCP ────────────────────────────────────────────
+        // El puente es un servidor MCP por stdio estándar: cualquier cliente que lance servidores locales sirve.
+        // Aquí se automatiza el registro en los más habituales. REVITMCP_TEST_HOME / REVITMCP_TEST_APPDATA permiten probar sin tocar la configuración real.
+        private sealed class Client
         {
-            try
+            public string Name, Description, Path, Container;   // Container: clave JSON ("mcpServers" / "servers"); null = TOML
+            public bool Typed;                                   // añade "type":"stdio" (VS Code)
+        }
+
+        private static string Home() =>
+            Environment.GetEnvironmentVariable("REVITMCP_TEST_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        private static string AppData() =>
+            Environment.GetEnvironmentVariable("REVITMCP_TEST_APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+        private static List<Client> Clients() => new List<Client>
+        {
+            new Client { Name = "claude-desktop", Description = "Claude Desktop", Container = "mcpServers", Path = ClaudeConfig },
+            new Client { Name = "gemini-cli", Description = "Gemini CLI (Google)", Container = "mcpServers",
+                         Path = System.IO.Path.Combine(Home(), ".gemini", "settings.json") },
+            new Client { Name = "cursor", Description = "Cursor", Container = "mcpServers",
+                         Path = System.IO.Path.Combine(Home(), ".cursor", "mcp.json") },
+            new Client { Name = "vscode", Description = "VS Code (GitHub Copilot)", Container = "servers", Typed = true,
+                         Path = System.IO.Path.Combine(AppData(), "Code", "User", "mcp.json") },
+            new Client { Name = "codex", Description = "Codex CLI (OpenAI)", Container = null,
+                         Path = System.IO.Path.Combine(Home(), ".codex", "config.toml") },
+        };
+
+        private static bool Detected(Client c) => Directory.Exists(System.IO.Path.GetDirectoryName(c.Path));
+
+        private static int Help()
+        {
+            Console.WriteLine("RevitMcpBridge — puente MCP stdio ⇄ Revit");
+            Console.WriteLine("  (sin argumentos)         ejecuta el puente (lo lanza el cliente MCP)");
+            Console.WriteLine("  --list                   muestra los clientes soportados y si están instalados");
+            Console.WriteLine("  --install [cliente|all]  registra el servidor 'revit' (all = los detectados)");
+            Console.WriteLine("  --uninstall [cliente|all]");
+            Console.WriteLine("Clientes: " + string.Join(", ", Clients().ConvertAll(c => c.Name)));
+            return 0;
+        }
+
+        private static int List()
+        {
+            foreach (var c in Clients())
+                Console.WriteLine($"{c.Name,-15} {(Detected(c) ? "detectado " : "no detectado")}  {c.Path}");
+            return 0;
+        }
+
+        private static int Manage(bool install, string which)
+        {
+            var targets = new List<Client>();
+            foreach (var c in Clients())
+                if (which == "all" ? Detected(c) : string.Equals(c.Name, which, StringComparison.OrdinalIgnoreCase)) targets.Add(c);
+            if (targets.Count == 0)
             {
-                var root = new Dictionary<string, object>();
-                if (File.Exists(ClaudeConfig))
-                {
-                    var text = File.ReadAllText(ClaudeConfig);
-                    if (text.Trim().Length > 0)
-                        root = (Json.DeserializeObject(text) as Dictionary<string, object>) ?? root;
-                    File.Copy(ClaudeConfig, ClaudeConfig + ".bak", true);
-                }
-
-                var servers = root.ContainsKey("mcpServers") ? root["mcpServers"] as Dictionary<string, object> : null;
-                if (servers == null) servers = new Dictionary<string, object>();
-
-                if (install)
-                {
-                    servers[ServerKey] = new Dictionary<string, object>
-                    {
-                        ["command"] = System.Reflection.Assembly.GetExecutingAssembly().Location,
-                        ["args"] = new ArrayList()
-                    };
-                }
-                else servers.Remove(ServerKey);
-
-                root["mcpServers"] = servers;
-                Directory.CreateDirectory(Path.GetDirectoryName(ClaudeConfig));
-                File.WriteAllText(ClaudeConfig, Pretty(Json.Serialize(root)), new UTF8Encoding(false));
-                return 0;
+                Console.Error.WriteLine(which == "all" ? "No se detectó ningún cliente MCP compatible." : $"Cliente desconocido: {which}. Usa --list.");
+                return which == "all" ? 0 : 2;
             }
-            catch (Exception ex)
+
+            int failures = 0;
+            foreach (var c in targets)
             {
-                Console.Error.WriteLine(ex.Message);
-                return 1;
+                try
+                {
+                    if (c.Container == null) EditToml(c, install); else EditJson(c, install);
+                    Console.WriteLine($"{(install ? "registrado" : "quitado")}: {c.Description}");
+                }
+                catch (Exception ex)
+                {
+                    failures++;
+                    Console.Error.WriteLine($"{c.Description}: {ex.Message}");
+                }
             }
+            return failures == 0 ? 0 : 1;
+        }
+
+        private static string ExePath() => System.Reflection.Assembly.GetExecutingAssembly().Location;
+
+        private static void EditJson(Client c, bool install)
+        {
+            var root = new Dictionary<string, object>();
+            if (File.Exists(c.Path))
+            {
+                var text = File.ReadAllText(c.Path);
+                if (text.Trim().Length > 0)
+                    root = (Json.DeserializeObject(text) as Dictionary<string, object>) ?? root;
+                File.Copy(c.Path, c.Path + ".bak", true);
+            }
+
+            var servers = root.ContainsKey(c.Container) ? root[c.Container] as Dictionary<string, object> : null;
+            if (servers == null) servers = new Dictionary<string, object>();
+
+            if (install)
+            {
+                var entry = new Dictionary<string, object>();
+                if (c.Typed) entry["type"] = "stdio";
+                entry["command"] = ExePath();
+                entry["args"] = new ArrayList();
+                servers[ServerKey] = entry;
+            }
+            else servers.Remove(ServerKey);
+
+            root[c.Container] = servers;
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(c.Path));
+            File.WriteAllText(c.Path, Pretty(Json.Serialize(root)), new UTF8Encoding(false));
+        }
+
+        // Codex usa TOML: se reemplaza solo el bloque [mcp_servers.revit] y se conserva el resto del archivo.
+        private static void EditToml(Client c, bool install)
+        {
+            var lines = new List<string>();
+            if (File.Exists(c.Path))
+            {
+                lines.AddRange(File.ReadAllText(c.Path).Replace("\r\n", "\n").Split('\n'));
+                File.Copy(c.Path, c.Path + ".bak", true);
+            }
+
+            var kept = new List<string>();
+            bool skipping = false;
+            foreach (var line in lines)
+            {
+                var t = line.Trim();
+                if (t.StartsWith("[")) skipping = t == "[mcp_servers." + ServerKey + "]" || t.StartsWith("[mcp_servers." + ServerKey + ".");
+                if (!skipping) kept.Add(line);
+            }
+            while (kept.Count > 0 && kept[kept.Count - 1].Trim().Length == 0) kept.RemoveAt(kept.Count - 1);
+
+            if (install)
+            {
+                if (kept.Count > 0) kept.Add("");
+                kept.Add("[mcp_servers." + ServerKey + "]");
+                kept.Add("command = \"" + ExePath().Replace("\\", "\\\\") + "\"");
+                kept.Add("args = []");
+            }
+
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(c.Path));
+            File.WriteAllText(c.Path, string.Join("\n", kept) + "\n", new UTF8Encoding(false));
         }
 
         // Indentación simple para que el archivo siga siendo legible por el usuario.

@@ -31,6 +31,27 @@ namespace RevitMcpPlugin.Ui
         }
     }
 
+    /// <summary>Botón de la cinta: inicio de sesión / estado de la cuenta DJP.</summary>
+    [Transaction(TransactionMode.Manual)]
+    public class AccountCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, Autodesk.Revit.DB.ElementSet elements)
+        {
+            try
+            {
+                var window = new AccountWindow();
+                new WindowInteropHelper(window).Owner = commandData.Application.MainWindowHandle;
+                window.ShowDialog();
+                return Result.Succeeded;
+            }
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                return Result.Failed;
+            }
+        }
+    }
+
     internal static class RibbonSetup
     {
         private const string TabName = "RevitMCP";
@@ -51,17 +72,27 @@ namespace RevitMcpPlugin.Ui
                 Image = Icon(16)
             };
             panel.AddItem(data);
+
+            panel.AddItem(new PushButtonData(
+                "RevitMcpAccount", "Cuenta\nDJP",
+                typeof(AccountCommand).Assembly.Location, typeof(AccountCommand).FullName)
+            {
+                ToolTip = "Inicia o cierra sesión con tu cuenta DJP",
+                LongDescription = "RevitMCP exige una cuenta DJP. Aquí inicias sesión, ves con qué cuenta estás y puedes cerrarla.",
+                LargeImage = Icon(32, "DJP"),
+                Image = Icon(16, "DJP")
+            });
         }
 
-        /// <summary>Icono generado en código: cuadrado azul con "MCP".</summary>
-        private static BitmapSource Icon(int size)
+        /// <summary>Icono generado en código con la paleta DJP: cuadrado carbón con texto dorado.</summary>
+        private static BitmapSource Icon(int size, string label = "MCP")
         {
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {
-                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0x1F, 0x5F, 0xA8)), null, new Rect(1, 1, size - 2, size - 2), size / 6.0, size / 6.0);
-                var text = new FormattedText("MCP", CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                    new Typeface("Segoe UI Semibold"), size * 0.36, Brushes.White, 1.0);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0x08, 0x10, 0x13)), null, new Rect(1, 1, size - 2, size - 2), size / 6.0, size / 6.0);
+                var text = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                    new Typeface("Segoe UI Semibold"), size * 0.36, new SolidColorBrush(Color.FromRgb(0xDD, 0xA4, 0x0F)), 1.0);
                 dc.DrawText(text, new Point((size - text.Width) / 2, (size - text.Height) / 2));
             }
             var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);

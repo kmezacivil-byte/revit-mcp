@@ -5,7 +5,7 @@
 ; ============================================================
 
 #define MyAppName      "RevitMCP Plugin"
-#define MyAppVersion   "2.0.0"
+#define MyAppVersion   "2.1.0"
 #define MyAppPublisher "Digital Jump Peru"
 #ifndef MyRevitYear
   #define MyRevitYear  "2021"
@@ -54,20 +54,20 @@ spanish.AddinFailed=No se pudo crear el archivo .addin en:%n%1%n%nVerifica los p
 ; ─────────────────────────────────────────────
 [Files]
 ; Plugin (Newtonsoft.Json se toma del que ya viene con Revit) y puente para Claude Desktop
-#if MyRevitYear == "2025"
-; Revit 2025: el plugin + Roslyn (motor de scripts de execute_code) + RevitMcpPlugin.deps.json
-Source: "build-output-2025\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs
+#if Int(MyRevitYear) >= 2025
+; Revit 2025+: el plugin + Roslyn (motor de scripts de execute_code) + RevitMcpPlugin.deps.json
+Source: "build-output-{#MyRevitYear}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs
 #else
 Source: "build-output-{#MyRevitYear}\{#MyDllFile}"; DestDir: "{app}"; Flags: ignoreversion
 #endif
 Source: "..\bridge\build-output\RevitMcpBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
-; Registra el servidor "revit" en Claude Desktop para el usuario que ejecuta el instalador
-Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--install-claude-desktop"; Flags: runasoriginaluser runhidden; StatusMsg: "Configurando Claude Desktop..."
+; Registra el servidor "revit" en los clientes MCP detectados (Claude Desktop, Gemini CLI, Cursor, VS Code, Codex) del usuario que ejecuta el instalador
+Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--install all"; Flags: runasoriginaluser runhidden; StatusMsg: "Registrando el servidor en los clientes MCP detectados..."
 
 [UninstallRun]
-Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--uninstall-claude-desktop"; Flags: runhidden; RunOnceId: "UnregisterClaudeDesktop"
+Filename: "{app}\RevitMcpBridge.exe"; Parameters: "--uninstall all"; Flags: runhidden; RunOnceId: "UnregisterClaudeDesktop"
 
 ; ─────────────────────────────────────────────
 ;  Accesos directos (Inicio)

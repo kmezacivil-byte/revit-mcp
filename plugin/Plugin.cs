@@ -27,13 +27,32 @@ namespace RevitMcpPlugin
             }
 
             TaskDialog.Show("RevitMCP", $"Plugin cargado. Servidor MCP en http://127.0.0.1:{McpHttpServer.Port}/mcp\nToken: {McpHttpServer.TokenFile}");
+
+            // Sin sesión DJP se ofrece iniciar sesión una vez, cuando Revit ya está listo (en OnStartup aún no hay ventana principal).
+            if (McpConfig.AuthRequired) application.Idling += PromptLoginOnce;
             return Result.Succeeded;
+        }
+
+        private void PromptLoginOnce(object sender, Autodesk.Revit.UI.Events.IdlingEventArgs e)
+        {
+            var uiApp = sender as UIApplication;
+            if (uiApp == null) return;
+            uiApp.Idling -= PromptLoginOnce;
+            try
+            {
+                if (Auth.AuthManager.IsAuthenticated()) return;
+                var window = new Ui.AccountWindow();
+                new System.Windows.Interop.WindowInteropHelper(window).Owner = uiApp.MainWindowHandle;
+                window.ShowDialog();
+            }
+            catch { /* el aviso de inicio de sesión nunca debe romper Revit */ }
         }
 
         public Result OnShutdown(UIControlledApplication application)
         {
             _listener?.Stop();
             Families.FamilySessions.CloseAll();
+            TunnelManager.Stop();
             return Result.Succeeded;
         }
     }

@@ -17,11 +17,12 @@ namespace RevitMcpPlugin
     /// </summary>
     public class McpHttpServer
     {
-        public const int Port = 5002;
+        // REVITMCP_PORT y REVITMCP_DATA_DIR existen para pruebas automáticas; en uso normal valen 5002 y %LOCALAPPDATA%\RevitMCP.
+        public static readonly int Port = int.TryParse(Environment.GetEnvironmentVariable("REVITMCP_PORT"), out var envPort) ? envPort : 5002;
         private const string LatestVersion = "2026-07-28";
         private static readonly string[] SupportedVersions = { "2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26" };
 
-        public static readonly string DataDir = Path.Combine(
+        public static readonly string DataDir = Environment.GetEnvironmentVariable("REVITMCP_DATA_DIR") ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RevitMCP");
         private static readonly string LogFile = Path.Combine(DataDir, "RevitMCP_debug.log");
         public static readonly string TokenFile = Path.Combine(DataDir, "token.txt");
@@ -107,18 +108,32 @@ namespace RevitMcpPlugin
             {
                 var req = ctx.Request;
 
-                // Defensa contra DNS rebinding: solo hosts locales, y sin Origin de páginas web.
-                var host = req.UserHostName ?? "";
-                if (!(host.StartsWith("127.0.0.1") || host.StartsWith("localhost")) ||
-                    !string.IsNullOrEmpty(req.Headers["Origin"]))
-                { Send(ctx, 403, "Forbidden"); return; }
+                // /mcp → acceso local (Bearer). /mcp/<token> → acceso remoto a través de un túnel (solo si el usuario lo habilitó).
+                var path = (req.Url?.AbsolutePath ?? "/mcp").TrimEnd('/');
+                var remoteToken = path.Length > 4 && path.StartsWith("/mcp/") ? path.Substring(5) : null;
+                bool remote = remoteToken != null;
 
-                var auth = req.Headers["Authorization"] ?? "";
-                if (!auth.StartsWith("Bearer ") || !TokenEquals(auth.Substring(7).Trim(), _token))
+                if (remote)
                 {
-                    ctx.Response.AddHeader("WWW-Authenticate", "Bearer");
-                    Send(ctx, 401, "Unauthorized");
-                    return;
+                    // 404 (no 401/403) tanto si está desactivado como si el token no coincide: no revela que el servidor existe.
+                    if (!McpConfig.RemoteEnabled || !TokenEquals(remoteToken, McpConfig.RemoteToken()))
+                    { Send(ctx, 404, "Not Found"); return; }
+                }
+                else
+                {
+                    // Defensa contra DNS rebinding: solo hosts locales, y sin Origin de páginas web.
+                    var host = req.UserHostName ?? "";
+                    if (!(host.StartsWith("127.0.0.1") || host.StartsWith("localhost")) ||
+                        !string.IsNullOrEmpty(req.Headers["Origin"]))
+                    { Send(ctx, 403, "Forbidden"); return; }
+
+                    var auth = req.Headers["Authorization"] ?? "";
+                    if (!auth.StartsWith("Bearer ") || !TokenEquals(auth.Substring(7).Trim(), _token))
+                    {
+                        ctx.Response.AddHeader("WWW-Authenticate", "Bearer");
+                        Send(ctx, 401, "Unauthorized");
+                        return;
+                    }
                 }
 
                 if (req.HttpMethod != "POST") { Send(ctx, 405, "Method Not Allowed"); return; }
@@ -136,7 +151,7 @@ namespace RevitMcpPlugin
                 // Notificaciones (sin id): se aceptan sin respuesta.
                 if (id == null) { Send(ctx, 202, ""); return; }
 
-                SendJson(ctx, 200, Route(id, method, msg["params"] as JObject));
+                SendJson(ctx, 200, Route(id, method, msg["params"] as JObject, remote));
             }
             catch (Exception ex)
             {
@@ -146,7 +161,7 @@ namespace RevitMcpPlugin
         }
 
         // ── Enrutado JSON-RPC ──────────────────────────────────────────────────
-        private JObject Route(JToken id, string method, JObject p)
+        private JObject Route(JToken id, string method, JObject p, bool remote)
         {
             switch (method)
             {
@@ -174,13 +189,13 @@ namespace RevitMcpPlugin
                 case "tools/list":
                     return Ok(id, new JObject
                     {
-                        ["tools"] = ToolRegistry.ListJson(),
+                        ["tools"] = ToolRegistry.ListJson(remote),
                         ["ttlMs"] = 10000,
                         ["cacheScope"] = "private"
                     });
 
                 case "tools/call":
-                    return CallTool(id, p);
+                    return CallTool(id, p, remote);
 
                 default:
                     return RpcError(id, -32601, $"Method not found: {method}");
@@ -188,15 +203,43 @@ namespace RevitMcpPlugin
         }
 
         private static JObject Capabilities() => new JObject { ["tools"] = new JObject { ["listChanged"] = true } };
-        private static JObject ServerInfo() => new JObject { ["name"] = "revit-mcp", ["version"] = "2.0.0" };
+        private static JObject ServerInfo() => new JObject { ["name"] = "revit-mcp", ["version"] = "2.1.0" };
 
-        private JObject CallTool(JToken id, JObject p)
+        private JObject CallTool(JToken id, JObject p, bool remote)
         {
             var name = (string)p?["name"];
-            if (ToolRegistry.Find(name) == null)
+            var tool = ToolRegistry.Find(name);
+            if (tool == null)
                 return RpcError(id, -32602, $"Unknown tool: {name}");
 
-            Log($"tools/call {name}");
+            // Una herramienta oculta por el perfil, por no estar activada o por el modo remoto de solo lectura tampoco se puede llamar.
+            if (!ToolRegistry.Visible(tool, remote))
+                return Ok(id, new JObject
+                {
+                    ["content"] = new JArray(new JObject
+                    {
+                        ["type"] = "text",
+                        ["text"] = remote && McpConfig.RemoteReadOnly && !tool.RemoteSafe
+                            ? $"'{name}' modifica el modelo o escribe archivos y el acceso remoto está en modo solo lectura. El usuario puede cambiarlo en Revit: pestaña RevitMCP > Configuración MCP."
+                            : $"'{name}' no está disponible: está desactivada o fuera del perfil de herramientas activo en RevitMCP ({McpConfig.Profile})."
+                    }),
+                    ["isError"] = true
+                });
+
+            // Cuenta DJP: sin sesión, la IA recibe una instrucción clara en vez de datos. ping queda libre para comprobar la conexión.
+            // Es una puerta de producto, no un límite de seguridad: el código es abierto y esta comprobación vive en el cliente.
+            if (name != "ping" && McpConfig.AuthRequired && !Auth.AuthManager.IsAuthenticated())
+                return Ok(id, new JObject
+                {
+                    ["content"] = new JArray(new JObject
+                    {
+                        ["type"] = "text",
+                        ["text"] = "Inicia sesión con tu cuenta DJP para usar RevitMCP: en Revit, pestaña RevitMCP > Cuenta."
+                    }),
+                    ["isError"] = true
+                });
+
+            Log($"tools/call {name}{(remote ? " (remoto)" : "")}");
             var raw = JObject.Parse(RevitDispatcher.Dispatch(name, p["arguments"] as JObject));
 
             // Los errores de la tool (argumento inválido, elemento inexistente) son isError, no errores de protocolo:
@@ -209,9 +252,22 @@ namespace RevitMcpPlugin
                 });
 
             var result = raw["result"];
+
+            // Una tool puede adjuntar una imagen con el campo "_mcp_imagen" {data (base64), mimeType}: se saca del JSON de texto
+            // y se envía como contenido MCP de tipo "image" para que el modelo la vea sin acceder al disco.
+            JObject image = null;
+            if (result is JObject ro && ro["_mcp_imagen"] is JObject img)
+            {
+                image = img;
+                ro.Remove("_mcp_imagen");
+            }
+
+            var content = new JArray(new JObject { ["type"] = "text", ["text"] = result?.ToString(Newtonsoft.Json.Formatting.None) ?? "{}" });
+            if (image != null)
+                content.Add(new JObject { ["type"] = "image", ["data"] = image["data"], ["mimeType"] = image["mimeType"] ?? "image/png" });
             var response = new JObject
             {
-                ["content"] = new JArray(new JObject { ["type"] = "text", ["text"] = result?.ToString(Newtonsoft.Json.Formatting.None) ?? "{}" }),
+                ["content"] = content,
                 ["isError"] = false
             };
             if (result is JObject) response["structuredContent"] = result;

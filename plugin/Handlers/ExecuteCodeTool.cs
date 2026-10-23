@@ -14,7 +14,7 @@ namespace RevitMcpPlugin.Handlers
         public override string Name => "execute_code";
 
         public override string Description =>
-            "Ejecuta un fragmento de C# dentro de Revit para casos que ninguna otra tool cubre. Disponible solo en Revit 2025 y solo si el " +
+            "Ejecuta un fragmento de C# dentro de Revit para casos que ninguna otra tool cubre. Disponible en Revit 2025 o superior y solo si el " +
             "usuario lo habilitó en la pestaña RevitMCP > Configuración MCP. Variables: Doc (Document), UiDoc, App (UIApplication), Cancel " +
             "(CancellationToken) y Print(x) para escribir salida; el valor de 'return' se devuelve. Usa las unidades internas de Revit " +
             "(pies, radianes). Modos: \"solo_leer\" (por defecto) corre en una transacción que SIEMPRE se revierte, así nada queda " +
@@ -48,8 +48,8 @@ namespace RevitMcpPlugin.Handlers
 
         public override object Run(ToolArgs args, ToolContext ctx)
         {
-#if !REVIT2025
-            throw new ToolException("execute_code solo está disponible en Revit 2025");
+#if !REVIT_MODERN
+            throw new ToolException("execute_code solo está disponible en Revit 2025 o superior");
 #else
             if (!McpConfig.ExecuteCodeEnabled)
                 throw new ToolException("execute_code está desactivada. El usuario debe habilitarla en la pestaña RevitMCP > Configuración MCP");
