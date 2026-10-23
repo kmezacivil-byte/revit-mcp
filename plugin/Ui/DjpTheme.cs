@@ -31,8 +31,36 @@ namespace RevitMcpPlugin.Ui
             window.SetResourceReference(Window.FontFamilyProperty, "FontBody");
             window.SetResourceReference(Window.ForegroundProperty, "Ink");
             window.FontSize = 13;
+            if (Logo != null) window.Icon = Logo;
             window.UseLayoutRounding = true;
             System.Windows.Media.TextOptions.SetTextFormattingMode(window, System.Windows.Media.TextFormattingMode.Display);
+        }
+
+        private static System.Windows.Media.Imaging.BitmapImage _logo;
+
+        /// <summary>Logo DJP (PNG incrustado). null si no se pudo leer: la interfaz funciona igual sin él.</summary>
+        public static System.Windows.Media.Imaging.BitmapImage Logo
+        {
+            get
+            {
+                if (_logo != null) return _logo;
+                try
+                {
+                    using (var stream = typeof(DjpTheme).Assembly.GetManifestResourceStream("djp-logo.png"))
+                    {
+                        if (stream == null) return null;
+                        var image = new System.Windows.Media.Imaging.BitmapImage();
+                        image.BeginInit();
+                        image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;   // se copia a memoria: el stream se puede cerrar
+                        image.StreamSource = stream;
+                        image.EndInit();
+                        image.Freeze();
+                        _logo = image;
+                    }
+                }
+                catch { _logo = null; }
+                return _logo;
+            }
         }
 
         private static ResourceDictionary Load()

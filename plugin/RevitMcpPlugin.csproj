@@ -64,6 +64,11 @@
     <DefineConstants>$(DefineConstants);REVIT_PRE2024</DefineConstants>
   </PropertyGroup>
 
+  <!-- Logo DJP incrustado en el ensamblado (se lee con GetManifestResourceStream; sin URIs pack://) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Ui\Assets\djp-logo.png" LogicalName="djp-logo.png" />
+  </ItemGroup>
+
   <!-- ── Referencias a Revit API y Newtonsoft.Json ────────────────── -->
   <!--    La ruta es consistente en todas las versiones:               -->
   <!--    C:\Program Files\Autodesk\Revit <año>\*.dll                  -->

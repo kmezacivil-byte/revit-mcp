@@ -78,15 +78,30 @@ namespace RevitMcpPlugin.Ui
         /// <summary>Banda de cabecera carbón con filo dorado.</summary>
         public static Border Header(string title, string subtitle)
         {
-            var stack = new StackPanel { Margin = new Thickness(24, 16, 24, 14) };
+            var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             stack.Children.Add(new TextBlock { Text = title, Style = S("DjpTitle") });
             if (!string.IsNullOrEmpty(subtitle)) stack.Children.Add(new TextBlock { Text = subtitle, Style = S("DjpSubtitle"), Margin = new Thickness(0, 2, 0, 0) });
+
+            var row = new DockPanel { Margin = new Thickness(24, 14, 24, 12) };
+            var logo = DjpTheme.Logo;
+            if (logo != null)
+            {
+                var image = new Image
+                {
+                    Source = logo, Width = 46, Height = 46, Margin = new Thickness(0, 0, 14, 0),
+                    VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = true
+                };
+                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+                DockPanel.SetDock(image, Dock.Left);
+                row.Children.Add(image);
+            }
+            row.Children.Add(stack);
             return new Border
             {
                 Background = B("Carbon"),
                 BorderBrush = B("Gold"),
                 BorderThickness = new Thickness(0, 0, 0, 3),
-                Child = stack
+                Child = row
             };
         }
 
